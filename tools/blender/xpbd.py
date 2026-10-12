@@ -157,6 +157,19 @@ class Drape:
         np.add.at(cnt, i, ok.astype(float))
         np.add.at(cnt, j, ok.astype(float))
 
+    def set_guides(self, target, weight, k):
+        """Soft x/z pull toward a target pose (the sleeves' hang angle is art-directed;
+        depth stays free so the underarm buckles out of plane on its own)."""
+        self.guide = (target, weight * k)
+
+    def _guides(self):
+        if not hasattr(self, "guide"):
+            return
+        t, w = self.guide
+        m = w > 0
+        for c in (0, 2):
+            self.x[m, c] += (t[m, c] - self.x[m, c]) * w[m]
+
     def _bar(self):
         pts, r, sy = self.bar
         x = self.x
@@ -226,6 +239,7 @@ class Drape:
             m = cnt > 0
             # over-relaxed Jacobi
             self.x[m] += 1.5 * acc[m] / cnt[m][:, None]
+            self._guides()
             self.x[self.pins] = self.pinned
             self._tethers()
             self._bar()
@@ -233,7 +247,7 @@ class Drape:
             rebuild_hf = False
 
     def run(self, steps=600, dt=1 / 240, iters=20, damping=0.04, k_stretch=1.0, k_comp=0.6, k_bend=0.1,
-            k_pair=0.05, min_frac=0.35, noise=0.001, seed=1, log=None):
+            k_pair=0.1, min_frac=0.6, noise=0.001, seed=1, log=None):
         rng = np.random.default_rng(seed)
         # a whisper of noise so buckling picks varied directions (not a perfectly mirrored fold)
         free = self.inv_m > 0

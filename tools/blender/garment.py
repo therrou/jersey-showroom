@@ -25,15 +25,18 @@ BAR_RADIUS = 0.011
 BAR_DEPTH_SCALE = 0.45
 
 # Shoulder seam points held by the hanger (|x| below this), resting just above the bar.
-PIN_HALF_WIDTH = 0.17
+PIN_HALF_WIDTH = 0.235  # out to the shoulder points: the shoulders stay square on
 PIN_GAP = 0.004
-PIN_BAND = 0.02
-BODY_DEPTH = (0.008, 0.022)
+PIN_BAND = 0.03
+# The pinned shoulder band wraps a rounded profile this thick (half), like a shaped
+# hanger, so the shoulders read filled instead of creased flat over a thin bar.
+SHOULDER_HALF = 0.022
+BODY_DEPTH = (0.03, 0.02)
 ARMPIT_SOFT = (0.05, 0.16)
 PREPOSE = True
 FOLD_DEPTH = 0.012
 SLEEVE_DROP_DEG = 0
-SLEEVE_FORWARD = 0.06
+SLEEVE_FORWARD = 0.0
 SLEEVE_BLEND = (0.0, 0.1)
 SLEEVE_FORWARD_BLEND = (-0.03, 0.03)
 PRESSURE = 0.0
@@ -141,8 +144,8 @@ def build_tube(spacing, name, drop_shift=None):
         gaps = []
         for p in seam_pts:
             x, y = p
-            if abs(x) < PIN_HALF_WIDTH and y > -0.1:
-                gaps.append(y - (bar_y(x) + BAR_RADIUS * BAR_DEPTH_SCALE))
+            if abs(x) < BAR_POINTS[-1][0] and y > -0.1:
+                gaps.append(y - (bar_y(x) + BAR_RADIUS))  # bar top: its height isn't squashed
         drop_shift = min(gaps) - PIN_GAP
 
     bm = bmesh.new()
@@ -165,7 +168,8 @@ def build_tube(spacing, name, drop_shift=None):
         ds = 0.0 if on_seam else d_seam(x, y)
         h = half_depth(x, y, ds)
         if 0 < ds < PIN_BAND and abs(x) < PIN_HALF_WIDTH and y > -0.1:
-            h = max(h, BAR_RADIUS * BAR_DEPTH_SCALE + 0.003)  # wrap the bar, don't cut it
+            round_ = math.sqrt(smoothstep(0.0, PIN_BAND, ds))
+            h = max(h, SHOULDER_HALF * round_, BAR_RADIUS * BAR_DEPTH_SCALE + 0.003)
         Y = (h if side == 1 else -h) - fold_seed(x, y)
         dx, dy, dz = prepose(x, y) if PREPOSE else (0.0, 0.0, 0.0)
         v = bm.verts.new((x + dx, Y - dz, y + dy - drop_shift))
