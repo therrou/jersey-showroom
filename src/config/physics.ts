@@ -36,31 +36,37 @@ export const physics = {
     /** Pivot glide (critically damped) and how hard it may accelerate (m/s²). */
     glideStiffness: 30,
     glideMaxAccel: 3.5,
-    swingDamping: 4.5,
+    /** Hook friction (1/s): how quickly the hanger's (physical) swing dies out. */
+    swingDamping: 2,
     /** Yaw spring for flips. */
     flipStiffness: 12,
     flipDamping: 0.55,
     /** Pointer breeze strength. */
     wind: 0.7,
-    /** Fabric: lower bend compliance = stiffer, crisper folds. */
-    bendCompliance: 1e-3,
-    aero: 2.4,
-    /** Grab-and-pull: pull per substep (0–1), soft patch radius (m), max pull from where
-     *  the fabric hangs (m). Lower = heavier, calmer fabric. */
-    grabStrength: 0.14,
+    /** Dihedral bending compliance (1/(N·m)): higher = floppier fabric. ~5e3 ≈ a heavy
+     *  knit at this cage resolution. */
+    bendCompliance: 5e3,
+    /** How much of the Blender drape's curvature the fabric remembers (0 = rests flat). */
+    bendRestKeep: 0.25,
+    /** Quadratic air drag; ½ρC_d of real air is ≈ 0.6. */
+    aero: 0.6,
+    /** Grab-and-pull: attachment compliance (m/N, higher = looser grip), soft patch radius
+     *  (m), max pull from where the fabric hangs (m), falloff toward the patch edge. */
+    grabCompliance: 0.05,
     grabRadius: 0.05,
-    grabMaxPull: 0.12,
-    /** Velocity damping (1/s), plus extra for half a second after letting go. */
-    damping: 2.4,
-    releaseDamping: 9,
-    /** Front↔back volume links pulling back to the rest depth (higher = softer). */
-    volumeCompliance: 1.2e-2,
-    /** Fabric stretch (0 = inextensible), post-release window (s), speed cap (m/s), grab
-     *  falloff toward the patch edge (higher = tighter pinch). */
-    stretchCompliance: 2e-8,
-    releaseTime: 0.5,
-    maxSpeed: 2.5,
+    grabMaxPull: 0.3,
     grabFalloff: 2,
+    /** Deformation damping (1/s; rigid swing is never damped), optional extra after a drop. */
+    damping: 1.2,
+    releaseDamping: 0,
+    releaseTime: 0.5,
+    /** Stretch compliance in tension (≈ inextensible) and compression (soft: buckles). */
+    stretchCompliance: 2e-8,
+    compressionCompliance: 0.1,
+    /** Self-collision thickness, as a fraction of the cage's mean edge (0 = off). */
+    selfCollision: 0.65,
+    /** Particle speed cap (m/s): a safety net only. */
+    maxSpeed: 8,
   },
 }
 
@@ -68,7 +74,7 @@ export type PhysicsConfig = typeof physics
 
 /** Every knob that shapes how the modal jersey grabs, moves and settles. */
 export const FEEL_KEYS = [
-  'grabStrength',
+  'grabCompliance',
   'grabRadius',
   'grabMaxPull',
   'grabFalloff',
@@ -78,8 +84,10 @@ export const FEEL_KEYS = [
   'maxSpeed',
   'aero',
   'bendCompliance',
+  'bendRestKeep',
   'stretchCompliance',
-  'volumeCompliance',
+  'compressionCompliance',
+  'selfCollision',
   'swingDamping',
 ] as const
 type ModalFeel = Pick<typeof physics.modal, (typeof FEEL_KEYS)[number]>
@@ -87,16 +95,19 @@ type ModalFeel = Pick<typeof physics.modal, (typeof FEEL_KEYS)[number]>
 /** How the modal cloth feels to grab and drop (?tune → cloth feel). */
 export const CLOTH_FEEL: Record<string, ModalFeel> = {
   'heavy knit': {
-    grabStrength: 0.1, grabRadius: 0.06, grabMaxPull: 0.09, grabFalloff: 1.6, damping: 3.6, releaseDamping: 12,
-    releaseTime: 0.7, maxSpeed: 1.8, aero: 3.2, bendCompliance: 1.6e-3, stretchCompliance: 2e-8, volumeCompliance: 2e-2, swingDamping: 6,
+    grabCompliance: 0.08, grabRadius: 0.06, grabMaxPull: 0.25, grabFalloff: 1.6, damping: 2, releaseDamping: 0,
+    releaseTime: 0.7, maxSpeed: 8, aero: 0.8, bendCompliance: 2e3, bendRestKeep: 0.35, stretchCompliance: 2e-8,
+    compressionCompliance: 0.05, selfCollision: 0.7, swingDamping: 3,
   },
   default: {
-    grabStrength: 0.14, grabRadius: 0.05, grabMaxPull: 0.12, grabFalloff: 2, damping: 2.4, releaseDamping: 9,
-    releaseTime: 0.5, maxSpeed: 2.5, aero: 2.4, bendCompliance: 1e-3, stretchCompliance: 2e-8, volumeCompliance: 1.2e-2, swingDamping: 4.5,
+    grabCompliance: 0.05, grabRadius: 0.05, grabMaxPull: 0.3, grabFalloff: 2, damping: 1.2, releaseDamping: 0,
+    releaseTime: 0.5, maxSpeed: 8, aero: 0.6, bendCompliance: 5e3, bendRestKeep: 0.25, stretchCompliance: 2e-8,
+    compressionCompliance: 0.1, selfCollision: 0.65, swingDamping: 2,
   },
   'light jersey': {
-    grabStrength: 0.22, grabRadius: 0.045, grabMaxPull: 0.18, grabFalloff: 2.4, damping: 1.4, releaseDamping: 6,
-    releaseTime: 0.35, maxSpeed: 3.2, aero: 1.6, bendCompliance: 6e-4, stretchCompliance: 2e-8, volumeCompliance: 6e-3, swingDamping: 3.5,
+    grabCompliance: 0.03, grabRadius: 0.045, grabMaxPull: 0.35, grabFalloff: 2.4, damping: 0.7, releaseDamping: 0,
+    releaseTime: 0.35, maxSpeed: 8, aero: 0.5, bendCompliance: 1.2e4, bendRestKeep: 0.15, stretchCompliance: 2e-8,
+    compressionCompliance: 0.2, selfCollision: 0.6, swingDamping: 1.4,
   },
 }
 

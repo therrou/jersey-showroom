@@ -3,7 +3,9 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { JERSEY_DROP } from './rackLayout'
 
-const wood = new THREE.MeshPhysicalMaterial({ color: '#6e4128', roughness: 0.38, clearcoat: 0.5, clearcoatRoughness: 0.35 })
+// The bar sits inside the jersey and is only ever seen through the neck opening, where
+// the fabric keeps most light off it: a dim, matte wood instead of the lit, glossy one.
+const innerWood = new THREE.MeshStandardMaterial({ color: '#2e1c12', roughness: 0.7, envMapIntensity: 0.35 })
 const chrome = new THREE.MeshStandardMaterial({ color: '#dfe3e8', roughness: 0.12, metalness: 1 })
 
 const _q = new THREE.Quaternion()
@@ -55,9 +57,9 @@ function useHangerGeometry() {
 export function Hanger({ fade }: { fade?: { value: number } }) {
   const { bar, hook, rod } = useHangerGeometry()
   const mats = useMemo(() => {
-    if (!fade) return { wood, chrome }
+    if (!fade) return { wood: innerWood, chrome }
     return {
-      wood: Object.assign(wood.clone(), { transparent: true }),
+      wood: Object.assign(innerWood.clone(), { transparent: true }),
       chrome: Object.assign(chrome.clone(), { transparent: true }),
     }
   }, [fade])
@@ -75,7 +77,7 @@ export function Hanger({ fade }: { fade?: { value: number } }) {
   })
   return (
     <group>
-      <mesh geometry={bar} material={mats.wood} castShadow />
+      <mesh geometry={bar} material={mats.wood} castShadow receiveShadow />
       <mesh ref={hookRef} geometry={hook} material={mats.chrome} castShadow />
       <mesh geometry={rod} material={mats.chrome} castShadow />
     </group>

@@ -28,10 +28,15 @@ defaults live in `src/config/physics.ts`.
   raycasting slivers, so it never flickers (`src/scene/RackHover.tsx`).
 
 **Modal (real cloth, Web Worker)**
-- XPBD cloth, "small steps" (12 substeps × 1 pass desktop, 8 on phones): stretch/shear,
-  bending across every interior edge (remembering a drape-folded rest shape), front↔back volume constraints, per-triangle aerodynamic drag, pinned to a
-  simulated hanger (critically damped pivot glide + pendulum swing + yaw spring)
-  (`src/cloth/ClothSolver.ts`).
+- XPBD cloth, "small steps" (10 substeps × 1 pass desktop, 8 on phones) at a fixed 60 Hz,
+  interpolated for display; it sleeps once still (no solver or skinning work) and wakes on a
+  grab, the pointer wind or a move. Stretch stiff in
+  tension / soft in compression (resting on the flat pattern), signed dihedral bending
+  resting near flat (seams keep their crease), spatial-hash self-collision, long-range
+  attachments to the pins, deformation-only damping, per-triangle aerodynamic drag. The
+  hanger is a rigid body on a ball-joint hook (pins shape-matched about the hook each
+  substep), so the swing comes from the cloth's mass; the pivot glide and the yaw are
+  scripted (`src/cloth/ClothSolver.ts`).
 - Grab-and-pull a soft patch of fabric; drag the background (or "View back" / `F`) to turn it.
   Pointer movement near the jersey stirs a local wind field.
 
@@ -50,6 +55,21 @@ rib knit, perforated vent panels, seams) and roughness (glossier twill on matte 
 `src/jersey/fabricMaterial.ts` combines that bump with a tiled knit micro-relief, applies the
 baked AO, and adds sheen. Set `crestUrl` on a jersey to use official chest artwork.
 
+The kits ship **pre-painted as GPU-compressed KTX2** (`public/kits/`, `src/jersey/kitFiles.ts`)
+in two tiers: `r` (rack, and the modal on phones; colour 2048×1024) and `m` (modal on desktop;
+colour 4096×2048, loaded on demand). Only the open jersey and its neighbours keep their `m`
+kits in memory. Painting at runtime remains the fallback (missing files, or a `crestUrl`).
+After changing kit data or the painter, rebuild them:
+
+```bash
+pnpm dev                       # then open /tools/kit-bake.html → assets-src/kits/*.png
+brew install basis_universal   # once
+tools/kits/encode.sh           # → public/kits/*.ktx2 (~3 min; optional glob: '*_color_r')
+```
+
+**Rack mesh detail** — side-on jerseys draw the light mesh (~6.7k tris); the turned-out one
+swaps to the detailed one (~24k), and back once it has turned away again.
+
 **Modal transition** — the jersey lifts off the rack: the rack publishes the jersey's screen
 pose, the cloth spawns at exactly those pixels and glides to centre; the rack captures one
 frame (with that jersey hidden), blurs it once into a still backdrop and stops rendering.
@@ -58,9 +78,9 @@ fades, the next rises from below and fades in. Kits for the hovered jersey and t
 jersey's neighbours are painted ahead of time.
 
 **Modal cloth feel** — `?tune` → *grab & drop*: presets (heavy knit / default / light
-jersey) and every knob that shapes the grab and the settle — grab strength / radius / max
-pull / falloff, damping, calm after drop (+ how long), speed cap, air drag, bend / stretch /
-volume softness, hanger swing damping. All live; **copy settings** puts the current values
+jersey) and every knob that shapes the grab and the settle — grab looseness / radius / max
+pull / falloff, deformation damping, calm after drop (+ how long), speed cap, air drag, bend
+softness, fold memory, stretch / compression softness, self-collision thickness, hook friction. All live; **copy settings** puts the current values
 on the clipboard as JSON (defaults live in `src/config/physics.ts`, `CLOTH_FEEL`).
 
 `?fps` shows a frame-rate overlay (handy on a real phone with `pnpm dev --host`).

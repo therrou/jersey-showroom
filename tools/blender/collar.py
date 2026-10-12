@@ -36,6 +36,24 @@ BACK_BOTTOM = _quad((-0.105, -0.014), (0.0, -0.066), (0.105, -0.014))
 # (offset toward the fabric as a fraction of the painted widths / metres, lift off the surface)
 LIFT_BODY = 0.005
 ROLL_UNDER = 0.007
+# Back strip stands up instead of lying on the neckline: a real rib collar rises ~2 cm at
+# the centre back (tapering to nothing at the shoulder seams, where it meets the front
+# strip), which closes the view through the V onto the hanger and the inside of the tube.
+STAND_H = 0.022
+STAND_UP = np.array([0.0, 0.22, 1.0]) / np.linalg.norm([0.0, 0.22, 1.0])  # up, leaning back a touch
+
+
+def _back_band_uv(x, f):
+    """Pattern point on the painted back band at x, fraction f from its lower (body) edge
+    to its upper (opening) edge. The back cut can already sit inside the painted band, so
+    offsets from it would sample body colour: map straight across the band instead."""
+    t = min(max((x / 0.105 + 1) / 2, 0.0), 1.0)  # both curves are symmetric quadratics in x
+
+    def quad(y0, yc):
+        return (1 - t) ** 2 * y0 + 2 * (1 - t) * t * yc + t ** 2 * y0
+
+    lo, hi = quad(-0.014, -0.066), quad(0.01, -0.04)
+    return np.array([x, lo + f * (hi - lo)])
 
 
 def _ray_poly(p, d, poly):
@@ -206,20 +224,28 @@ def build(obj_name="JerseyDrape", name="CollarBand", keep_current=False):
             w_in = max(w_in, 0.004)  # always overhang the cut a little
             _, n3, J = pm.frame(s, p)
             pos = X[k]
-            # cross-section: (offset toward fabric in pattern metres, lift along normal)
+            # cross-section: (offset toward fabric in pattern metres, lift along normal,
+            # how far up the standing collar this point is (0–1))
             prof = [
-                (w_out, 0.0008),
-                (w_out * 0.55, LIFT_BODY * 0.85),
-                (0.0, LIFT_BODY),
-                (-w_in * 0.6, LIFT_BODY * 0.95),
-                (-w_in, LIFT_BODY * 0.45),
-                (-w_in - 0.002, -0.0015),
-                (-w_in + 0.001, -ROLL_UNDER * 0.5),
+                (w_out, 0.0008, 0.0),
+                (w_out * 0.55, LIFT_BODY * 0.85, 0.0),
+                (0.0, LIFT_BODY, 0.0),
+                (-w_in * 0.6, LIFT_BODY * 0.95, 0.55),
+                (-w_in, LIFT_BODY * 0.45, 1.0),
+                (-w_in - 0.002, -0.0015, 1.0),
+                (-w_in + 0.001, -ROLL_UNDER * 0.5, 0.35),
             ]
+            # back strip: rises along the run, highest at the centre back
+            stand = STAND_H * math.sin(math.pi * k / max(len(P) - 1, 1)) ** 0.6 if s == 1 else 0.0
             row = []
-            for o, lift in prof:
-                q = p + nrm * o
-                row.append((q, pos + J @ (nrm * o) + n3 * lift))
+            for o, lift, up in prof:
+                if s == 1:
+                    q = _back_band_uv(p[0], min(max((w_out - o) / (w_out + w_in), 0.1), 0.9))
+                else:
+                    q = p + nrm * o  # UVs stay on the painted band
+                # standing points go up instead of overhanging the opening
+                o_pos = o * (1 - 0.85 * up) if stand > 0 and o < 0 else o
+                row.append((q, pos + J @ (nrm * o_pos) + n3 * lift + STAND_UP * (stand * up)))
             rows.append(row)
         verts = [[bm.verts.new(x) for _, x in row] for row in rows]
         strip = strip_coords(rows)

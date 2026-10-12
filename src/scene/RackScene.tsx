@@ -6,6 +6,7 @@ import { Bloom, EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react
 import { ToneMappingMode } from 'postprocessing'
 import * as THREE from 'three'
 import { JERSEYS } from '../data/jerseys'
+import { initKitLoader } from '../jersey/assets'
 import { useLoading } from '../state/loading'
 import { useRack } from '../state/store'
 import { CursorTracker } from './CursorTracker'
@@ -23,6 +24,8 @@ const FRAME_H = 1.55
 /** Portrait screens frame a stretch of rail and pan along it. */
 const FRAME_W_PORTRAIT = 1.35
 const LOOK_AT = new THREE.Vector3(0, 0.4, 0)
+/** Camera stays put this long after the modal closes (covers the hand-off fade). */
+const HOLD_AFTER_CLOSE_MS = 450
 
 /**
  * Fits the rack to the viewport. Landscape: whole rack + a little pointer parallax.
@@ -33,6 +36,7 @@ function CameraRig() {
   const size = useThree((s) => s.size)
   const dist = useRef(4)
   const look = useRef(LOOK_AT.clone())
+  const holdUntil = useRef(0)
   useEffect(() => {
     const vfov = THREE.MathUtils.degToRad(camera.fov)
     const aspect = size.width / size.height
@@ -43,6 +47,11 @@ function CameraRig() {
     rackView.panLimit = rackView.portrait ? Math.max(0, RAIL_LENGTH / 2 - w / 2 + 0.1) : 0
   }, [camera, size])
   useFrame(({ pointer }, dt) => {
+    // Hold still from lift-off until shortly after the put-back hand-off: the modal copy
+    // is placed by this camera's pixels, so parallax must not slide the rack under it.
+    const now = performance.now()
+    if (useRack.getState().phase !== 'closed') holdUntil.current = now + HOLD_AFTER_CLOSE_MS
+    if (now < holdUntil.current) return
     const k = 1 - Math.exp(-dt * 3)
     let x = pointer.x * 0.12
     if (rackView.portrait) {
@@ -83,6 +92,8 @@ function Loaded({ onLoad }: { onLoad: () => void }) {
 }
 
 export function RackScene() {
+  // kit textures are GPU-compressed (KTX2): the loader needs a renderer to pick formats
+  initKitLoader(useThree((s) => s.gl))
   const quality = useRack((s) => s.quality)
   const phase = useRack((s) => s.phase)
   const [settled, setSettled] = useState(false)

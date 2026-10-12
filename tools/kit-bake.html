@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Kit bake</title>
+  </head>
+  <body>
+    <pre id="log">painting…</pre>
+    <script type="module">
+      // Dev tool: paints every kit once with the real painter and saves power-of-two atlases
+      // to assets-src/kits/ (kit-export middleware, vite.config.ts), ready for
+      // tools/kits/encode.sh. Usage: /tools/kit-bake.html  (optional ?kits=CAN,SWE)
+      import { JERSEYS } from '/src/data/jerseys.ts'
+      import { createJerseyKit } from '/src/jersey/jerseyTexture.ts'
+      import { KIT_TIERS } from '/src/jersey/kitFiles.ts'
+
+      const log = document.getElementById('log')
+      const q = new URLSearchParams(location.search)
+      const only = q.get('kits')?.split(',')
+      const resample = (src, w, h) => {
+        const c = document.createElement('canvas')
+        c.width = w
+        c.height = h
+        const ctx = c.getContext('2d')
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(src, 0, 0, w, h)
+        return c
+      }
+      const save = async (canvas, name) => {
+        const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'))
+        const res = await fetch(`/__kit-export?to=bake&name=${name}`, { method: 'POST', body: blob })
+        if (!res.ok) throw new Error(`save ${name}: ${res.status}`)
+      }
+      try {
+        for (const j of JERSEYS) {
+          if (only && !only.includes(j.code)) continue
+          // paint at the largest tier; every file is resampled from it
+          const kit = await createJerseyKit(j, KIT_TIERS.m.color[0])
+          for (const [tier, sizes] of Object.entries(KIT_TIERS)) {
+            await save(resample(kit.map.image, ...sizes.color), `${j.code}_color_${tier}.png`)
+            await save(resample(kit.bump.image, ...sizes.height), `${j.code}_height_${tier}.png`)
+            await save(resample(kit.rough.image, ...sizes.rough), `${j.code}_rough_${tier}.png`)
+          }
+          log.textContent += `\n${j.code} saved`
+        }
+        log.textContent += '\ndone'
+        document.title = 'Kit bake: done'
+      } catch (e) {
+        log.textContent += `\nFAILED: ${e}`
+        document.title = 'Kit bake: failed'
+      }
+    </script>
+  </body>
+</html>

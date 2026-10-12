@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { mergeSeamNormals, type BoundSkin, type JerseyMesh } from './JerseyGeometry'
+import { surfaceFrame } from './skin'
 
 /**
  * The Blender-built garment (tools/blender, public/models/jersey.glb):
@@ -56,7 +57,6 @@ interface Cage {
   particles: Float32Array
   triangles: Uint32Array
   edges: Uint32Array
-  bends: Uint32Array
   thickness: Uint32Array
   pins: Uint32Array
   side: Float32Array
@@ -87,29 +87,23 @@ function buildCage(g: THREE.BufferGeometry): Cage {
     pat[i * 2 + 1] = py[i]
   }
 
-  // stretch/shear: every triangle edge; bending: across every interior edge, between the
-  // two vertices opposite it (rest = the draped shape, so the drape's folds persist)
+  // stretch/shear: every triangle edge (the solver bends across them)
   const key = (a: number, b: number) => Math.min(a, b) * 1_000_003 + Math.max(a, b)
-  const opposite = new Map<number, number[]>()
+  const seen = new Set<number>()
   const edges: number[] = []
   for (let t = 0; t < triangles.length; t += 3) {
     const [a, b, c] = [triangles[t], triangles[t + 1], triangles[t + 2]]
-    for (const [p, q, o] of [
-      [a, b, c],
-      [b, c, a],
-      [c, a, b],
+    for (const [p, q] of [
+      [a, b],
+      [b, c],
+      [c, a],
     ]) {
       const k = key(p, q)
-      const list = opposite.get(k)
-      if (list) list.push(o)
-      else {
-        opposite.set(k, [o])
-        edges.push(Math.min(p, q), Math.max(p, q))
-      }
+      if (seen.has(k)) continue
+      seen.add(k)
+      edges.push(Math.min(p, q), Math.max(p, q))
     }
   }
-  const bends: number[] = []
-  for (const list of opposite.values()) if (list.length === 2) bends.push(list[0], list[1])
 
   // volume: the front and back particle at the same pattern point
   const back = new Map<string, number>()
@@ -129,7 +123,6 @@ function buildCage(g: THREE.BufferGeometry): Cage {
     particles,
     triangles,
     edges: new Uint32Array(edges),
-    bends: new Uint32Array(bends),
     thickness: new Uint32Array(thickness),
     pins: new Uint32Array(pins),
     side,
@@ -233,7 +226,8 @@ function bind(render: THREE.BufferGeometry, cage: Cage): BoundSkin {
 
   const tri = new Uint32Array(n * 3)
   const bary = new Float32Array(n * 3)
-  const offset = new Float32Array(n)
+  const offset = new Float32Array(n * 3)
+  const F = new Float32Array(12)
   const bc = [0, 0, 0]
   const best = [0, 0, 0]
   const x = new THREE.Vector3(), A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3()
@@ -293,15 +287,13 @@ function bind(render: THREE.BufferGeometry, cage: Cage): BoundSkin {
     const a = T[bt * 3], b = T[bt * 3 + 1], c = T[bt * 3 + 2]
     tri[v * 3] = a; tri[v * 3 + 1] = b; tri[v * 3 + 2] = c
     bary[v * 3] = best[0]; bary[v * 3 + 1] = best[1]; bary[v * 3 + 2] = best[2]
-    // offset along the interpolated normal from the cage surface point
-    let sx = 0, sy = 0, sz = 0, nx = 0, ny = 0, nz = 0
-    for (let k = 0; k < 3; k++) {
-      const p = T[bt * 3 + k] * 3
-      sx += P[p] * best[k]; sy += P[p + 1] * best[k]; sz += P[p + 2] * best[k]
-      nx += N[p] * best[k]; ny += N[p + 1] * best[k]; nz += N[p + 2] * best[k]
-    }
-    const nl = Math.hypot(nx, ny, nz) || 1
-    offset[v] = ((x.x - sx) * nx + (x.y - sy) * ny + (x.z - sz) * nz) / nl
+    // full offset from the cage surface point, in the triangle's local frame (the collar
+    // band overhangs the cut edge: a normal-only offset would fold it flat onto the edge)
+    surfaceFrame(P, N, a, b, c, best[0], best[1], best[2], F)
+    const dx = x.x - F[0], dy = x.y - F[1], dz = x.z - F[2]
+    offset[v * 3] = dx * F[3] + dy * F[4] + dz * F[5]
+    offset[v * 3 + 1] = dx * F[6] + dy * F[7] + dz * F[8]
+    offset[v * 3 + 2] = dx * F[9] + dy * F[10] + dz * F[11]
   }
   return { kind: 'bound', tri, bary, offset }
 }
@@ -381,6 +373,58 @@ function buildOutline(g: THREE.BufferGeometry, part: Float32Array, bounds: THREE
   }
 }
 
+const COLLAR_PART = 1
+
+/**
+ * The collar band is built as a separate strip in Blender, and its winding comes out
+ * inside-out (normals into the tube): double-sided rendering then shades its outer face
+ * as the jersey's inside (grey, or the kit's base). If most of its triangles face against
+ * the cage surface they ride on, flip its winding and normals. (The rib facings are meant
+ * to face into the tube: they're turned under at the hem and cuffs.)
+ */
+function orientParts(g: THREE.BufferGeometry, part: Float32Array, skin: BoundSkin, cage: Cage) {
+  const P = g.getAttribute('position').array as Float32Array
+  const idx = g.getIndex()!.array as Uint32Array | Uint16Array
+  const CP = cage.particles
+  const N = new Float32Array(CP.length)
+  const T = cage.triangles
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3
+    const e1 = [CP[b] - CP[a], CP[b + 1] - CP[a + 1], CP[b + 2] - CP[a + 2]]
+    const e2 = [CP[c] - CP[a], CP[c + 1] - CP[a + 1], CP[c + 2] - CP[a + 2]]
+    const nn = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]
+    for (const v of [a, b, c]) for (let d = 0; d < 3; d++) N[v + d] += nn[d]
+  }
+  const F = new Float32Array(12)
+  const votes = new Map<number, { against: number; total: number }>()
+  for (let t = 0; t < idx.length; t += 3) {
+    const i0 = idx[t], i1 = idx[t + 1], i2 = idx[t + 2]
+    const p = part[i0]
+    if (p !== COLLAR_PART || part[i1] !== p || part[i2] !== p) continue
+    const ax = P[i0 * 3], ay = P[i0 * 3 + 1], az = P[i0 * 3 + 2]
+    const e1x = P[i1 * 3] - ax, e1y = P[i1 * 3 + 1] - ay, e1z = P[i1 * 3 + 2] - az
+    const e2x = P[i2 * 3] - ax, e2y = P[i2 * 3 + 1] - ay, e2z = P[i2 * 3 + 2] - az
+    const wx = e1y * e2z - e1z * e2y, wy = e1z * e2x - e1x * e2z, wz = e1x * e2y - e1y * e2x
+    const k = i0 * 3
+    surfaceFrame(CP, N, skin.tri[k], skin.tri[k + 1], skin.tri[k + 2], skin.bary[k], skin.bary[k + 1], skin.bary[k + 2], F)
+    const v = votes.get(p) ?? { against: 0, total: 0 }
+    v.total++
+    if (wx * F[9] + wy * F[10] + wz * F[11] < 0) v.against++
+    votes.set(p, v)
+  }
+  const flip = new Set([...votes].filter(([, v]) => v.against > v.total / 2).map(([p]) => p))
+  if (import.meta.env.DEV) console.info('[jersey] part orientation', Object.fromEntries(votes), 'flipped', [...flip])
+  if (!flip.size) return
+  for (let t = 0; t < idx.length; t += 3) {
+    if (!flip.has(part[idx[t]])) continue
+    const tmp = idx[t + 1]
+    idx[t + 1] = idx[t + 2]
+    idx[t + 2] = tmp
+  }
+  const nrm = g.getAttribute('normal').array as Float32Array
+  for (let v = 0; v < part.length; v++) if (flip.has(part[v])) for (let d = 0; d < 3; d++) nrm[v * 3 + d] *= -1
+}
+
 function buildMesh(renderSrc: THREE.BufferGeometry, cageSrc: THREE.BufferGeometry, maps: JerseyMesh['maps']): JerseyMesh {
   const cage = buildCage(cageSrc)
   const geometry = new THREE.BufferGeometry()
@@ -400,6 +444,10 @@ function buildMesh(renderSrc: THREE.BufferGeometry, cageSrc: THREE.BufferGeometr
   // AO comes from the baked map; the per-vertex term stays neutral
   geometry.setAttribute('aAO', new THREE.BufferAttribute(new Float32Array(count).fill(1), 1))
   const part = attr(renderSrc, '_part')
+  const skin = bind(renderSrc, cage)
+  orientParts(geometry, part, skin, cage)
+  // the collar band shows its own rib on both faces (no "inside of the tube" shading)
+  geometry.setAttribute('aCollar', new THREE.BufferAttribute(part.map((p) => (p === COLLAR_PART ? 1 : 0)), 1))
   const seamPairs = findSeamPairs(geometry)
   mergeSeamNormals(geometry, seamPairs)
   geometry.computeBoundingBox()
@@ -410,12 +458,12 @@ function buildMesh(renderSrc: THREE.BufferGeometry, cageSrc: THREE.BufferGeometr
     geometry,
     particles: cage.particles,
     triangles: cage.triangles,
-    skin: bind(renderSrc, cage),
+    skin,
     seamPairs,
     edges: cage.edges,
-    bends: cage.bends,
     thickness: cage.thickness,
     pins: cage.pins,
+    pattern: cage.pat,
     draped: true,
     outline: buildOutline(geometry, part, bounds),
     bounds,

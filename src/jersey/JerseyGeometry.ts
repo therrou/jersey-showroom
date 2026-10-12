@@ -20,12 +20,12 @@ export interface JerseyMesh {
   seamPairs: Uint32Array
   /** Structural + shear distance constraints, particle index pairs. */
   edges: Uint32Array
-  /** Bending distance constraints (across interior edges). */
-  bends: Uint32Array
   /** Front/back pairs that keep the garment's volume. */
   thickness: Uint32Array
   /** Particles held by the hanger. */
   pins: Uint32Array
+  /** Flat-pattern xy per particle, if known (stretch rests on the uncompressed fabric). */
+  pattern?: Float32Array
   /** The particles' rest shape is already the hanging drape (the solver keeps it as is);
    *  otherwise it's the flat pattern and the solver folds a drape into it. */
   draped: boolean
@@ -52,7 +52,8 @@ export interface BoundSkin {
   tri: Uint32Array
   /** 3 barycentric weights per render vertex. */
   bary: Float32Array
-  /** Offset along the interpolated particle normal, per render vertex. */
+  /** Offset from the surface point in its local frame (tangent, bitangent, normal; see
+   *  `surfaceFrame` in skin.ts), 3 per render vertex. */
   offset: Float32Array
 }
 
@@ -253,11 +254,9 @@ export function buildProceduralJersey({ cols, rows }: BuildOptions): JerseyMesh 
   }
 
   // Constraints (deduplicated: seam points appear on both sheets).
-  // Stretch/shear: every triangle edge. Bending: across every interior edge, between
-  // the two vertices opposite it.
+  // Stretch/shear: every triangle edge (the solver bends across them).
   const seen = new Set<number>()
   const edges: number[] = []
-  const bends: number[] = []
   const key = (p: number, q: number) => Math.min(p, q) * 1_000_003 + Math.max(p, q)
   const addPair = (list: number[], p: number, q: number) => {
     if (p === q) return
@@ -267,22 +266,15 @@ export function buildProceduralJersey({ cols, rows }: BuildOptions): JerseyMesh 
     list.push(Math.min(p, q), Math.max(p, q))
   }
   for (const sheet of [front, back]) {
-    const opposite = new Map<number, number[]>()
     for (let t = 0; t < tris.length; t += 3) {
       const [p, q, r] = [sheet[tris[t]], sheet[tris[t + 1]], sheet[tris[t + 2]]]
-      for (const [a, b, o] of [
-        [p, q, r],
-        [q, r, p],
-        [r, p, q],
-      ]) {
+      for (const [a, b] of [
+        [p, q],
+        [q, r],
+        [r, p],
+      ])
         addPair(edges, a, b)
-        const k = key(a, b)
-        const list = opposite.get(k)
-        if (list) list.push(o)
-        else opposite.set(k, [o])
-      }
     }
-    for (const list of opposite.values()) if (list.length === 2) addPair(bends, list[0], list[1])
   }
 
   // Pin everything sitting on the hanger bar.
@@ -317,7 +309,6 @@ export function buildProceduralJersey({ cols, rows }: BuildOptions): JerseyMesh 
     skin: { kind: 'direct', renderToParticle: r2pArr },
     seamPairs: seams,
     edges: new Uint32Array(edges),
-    bends: new Uint32Array(bends),
     thickness: new Uint32Array(thickness),
     pins: new Uint32Array([...pinSet]),
     draped: false,

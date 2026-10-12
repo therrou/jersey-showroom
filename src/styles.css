@@ -98,12 +98,15 @@ body {
 .ticker {
   position: absolute;
   left: 0; right: 0; bottom: 0;
+  z-index: 11; /* above the modal: it recolours to the open jersey */
   height: 30px;
-  background: var(--rink);
-  color: #06121c;
+  background: var(--ticker-bg, var(--rink));
+  color: var(--ticker-ink, #06121c);
   overflow: hidden;
   display: flex;
   align-items: center;
+  pointer-events: none;
+  transition: background-color 420ms var(--ease-out), color 420ms var(--ease-out);
 }
 .ticker__track {
   display: flex;
@@ -172,7 +175,7 @@ body {
   .caption { bottom: 104px; font-size: 18px; }
   .modal__arrow { top: auto; bottom: 150px; }
   .modal__title { font-size: 24px; }
-  .modal__info { bottom: 24px; }
+  .modal__info { bottom: 40px; }
   .modal__hint { top: 58px; }
 }
 

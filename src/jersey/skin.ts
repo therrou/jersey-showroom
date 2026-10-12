@@ -3,10 +3,11 @@ import type { JerseyMesh } from './JerseyGeometry'
 /** Per-mesh scratch for skinning (particle normals). */
 export interface SkinScratch {
   normals: Float32Array
+  frame: Float32Array
 }
 
 export function createSkinScratch(mesh: JerseyMesh): SkinScratch {
-  return { normals: new Float32Array(mesh.particles.length) }
+  return { normals: new Float32Array(mesh.particles.length), frame: new Float32Array(12) }
 }
 
 /** Area-weighted particle normals from the particle triangles. */
@@ -42,20 +43,47 @@ export function applySkin(mesh: JerseyMesh, P: Float32Array, out: Float32Array, 
   const N = scratch.normals
   particleNormals(mesh, P, N)
   const { tri, bary, offset } = skin
-  const n = offset.length
+  const F = scratch.frame
+  const n = tri.length / 3
   for (let v = 0; v < n; v++) {
     const i = v * 3
-    const a = tri[i] * 3, b = tri[i + 1] * 3, c = tri[i + 2] * 3
-    const u = bary[i], w1 = bary[i + 1], w2 = bary[i + 2]
-    let nx = N[a] * u + N[b] * w1 + N[c] * w2
-    let ny = N[a + 1] * u + N[b + 1] * w1 + N[c + 1] * w2
-    let nz = N[a + 2] * u + N[b + 2] * w1 + N[c + 2] * w2
-    const o = offset[v] / (Math.sqrt(nx * nx + ny * ny + nz * nz) || 1)
-    nx *= o; ny *= o; nz *= o
-    out[i] = P[a] * u + P[b] * w1 + P[c] * w2 + nx
-    out[i + 1] = P[a + 1] * u + P[b + 1] * w1 + P[c + 1] * w2 + ny
-    out[i + 2] = P[a + 2] * u + P[b + 2] * w1 + P[c + 2] * w2 + nz
+    surfaceFrame(P, N, tri[i], tri[i + 1], tri[i + 2], bary[i], bary[i + 1], bary[i + 2], F)
+    const ot = offset[i], ob = offset[i + 1], on = offset[i + 2]
+    out[i] = F[0] + F[3] * ot + F[6] * ob + F[9] * on
+    out[i + 1] = F[1] + F[4] * ot + F[7] * ob + F[10] * on
+    out[i + 2] = F[2] + F[5] * ot + F[8] * ob + F[11] * on
   }
+}
+
+/**
+ * Local frame on a particle triangle at barycentrics (u, w1, w2), written into `out`:
+ * surface point, tangent (along edge a→b), bitangent, interpolated normal (12 floats).
+ * Binding and skinning share it, so an offset in this frame reproduces the rest pose
+ * exactly — including parts that overhang the cage, like the collar band.
+ */
+export function surfaceFrame(
+  P: ArrayLike<number>, N: ArrayLike<number>, ia: number, ib: number, ic: number,
+  u: number, w1: number, w2: number, out: Float32Array,
+) {
+  const a = ia * 3, b = ib * 3, c = ic * 3
+  out[0] = P[a] * u + P[b] * w1 + P[c] * w2
+  out[1] = P[a + 1] * u + P[b + 1] * w1 + P[c + 1] * w2
+  out[2] = P[a + 2] * u + P[b + 2] * w1 + P[c + 2] * w2
+  let nx = N[a] * u + N[b] * w1 + N[c] * w2
+  let ny = N[a + 1] * u + N[b + 1] * w1 + N[c + 1] * w2
+  let nz = N[a + 2] * u + N[b + 2] * w1 + N[c + 2] * w2
+  const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1
+  nx /= nl; ny /= nl; nz /= nl
+  let tx = P[b] - P[a], ty = P[b + 1] - P[a + 1], tz = P[b + 2] - P[a + 2]
+  const d = tx * nx + ty * ny + tz * nz
+  tx -= nx * d; ty -= ny * d; tz -= nz * d
+  const tl = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1
+  tx /= tl; ty /= tl; tz /= tl
+  out[3] = tx; out[4] = ty; out[5] = tz
+  out[6] = ny * tz - nz * ty
+  out[7] = nz * tx - nx * tz
+  out[8] = nx * ty - ny * tx
+  out[9] = nx; out[10] = ny; out[11] = nz
 }
 
 /** The particle that best represents render vertex v (for grabbing). */

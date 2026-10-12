@@ -6,13 +6,16 @@ import { JERSEYS } from '../data/jerseys'
 import { modalKitWidth } from '../cloth/ClothJersey'
 import { ModalScene } from '../cloth/ModalScene'
 import { handoff } from '../state/handoff'
-import { jerseyKit } from '../jersey/assets'
+import { jerseyKit, releaseModalKits } from '../jersey/assets'
 import { useBackdrop } from '../scene/RackSnapshot'
 import { useRack } from '../state/store'
 
 const EASE = [0.23, 1, 0.32, 1] as const
 /** How long the modal copy takes to dissolve into the rack's once both are on screen. */
 const HANDOFF_FADE_MS = 140
+/** Modal kits leave memory this long after they stop being needed (outlasts the carousel
+ *  cross-fade and the put-back clear-up, so nothing on screen loses its textures). */
+const RELEASE_KITS_MS = 2000
 
 /** Blurred still of the rack (captured once by RackSnapshot) — a cheap, compositor-only fade. */
 function Backdrop() {
@@ -143,6 +146,20 @@ export function JerseyModal() {
       },
       phase === 'closed' ? 220 : 500,
     )
+    return () => window.clearTimeout(t)
+  }, [phase, hovered, open, quality])
+
+  // …and free the 4K kits nobody needs any more: only the open jersey and its neighbours
+  // (or, on the rack, the one being lingered on) stay resident
+  useEffect(() => {
+    const keep: number[] = []
+    if (quality === 'high') {
+      const n = JERSEYS.length
+      if (phase === 'closed') {
+        if (hovered !== null) keep.push(hovered)
+      } else if (open !== null) keep.push(open, (open + 1) % n, (open - 1 + n) % n)
+    }
+    const t = window.setTimeout(() => releaseModalKits(keep), RELEASE_KITS_MS)
     return () => window.clearTimeout(t)
   }, [phase, hovered, open, quality])
 

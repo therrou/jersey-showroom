@@ -520,10 +520,11 @@ function drawSide(p: Painter, j: Jersey, side: 'front' | 'back', crest: HTMLImag
   ctx.restore()
 }
 
+/** Painted here as canvases, or loaded pre-painted as KTX2 (src/jersey/assets.ts). */
 export interface JerseyKit {
-  map: THREE.CanvasTexture
-  bump: THREE.CanvasTexture
-  rough: THREE.CanvasTexture
+  map: THREE.Texture
+  bump: THREE.Texture
+  rough: THREE.Texture
 }
 
 /**

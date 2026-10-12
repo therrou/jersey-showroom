@@ -7,20 +7,22 @@ type FeelKey = (typeof FEEL_KEYS)[number]
 
 /** Slider ranges + labels for the grab & drop knobs (all live: change them mid-grab). */
 const FEEL_UI: Record<FeelKey, { min: number; max: number; step?: number; label: string; scale?: number }> = {
-  grabStrength: { min: 0.02, max: 0.6, label: 'grab strength' },
+  grabCompliance: { min: 0.005, max: 0.3, step: 0.005, label: 'grab looseness (m/N)' },
   grabRadius: { min: 0.02, max: 0.12, label: 'grab radius (m)' },
-  grabMaxPull: { min: 0.03, max: 0.4, label: 'max pull (m)' },
+  grabMaxPull: { min: 0.03, max: 0.5, label: 'max pull (m)' },
   grabFalloff: { min: 0.5, max: 4, label: 'grab falloff' },
-  damping: { min: 0.2, max: 6, label: 'damping' },
+  damping: { min: 0, max: 6, label: 'deformation damping' },
   releaseDamping: { min: 0, max: 20, label: 'calm after drop' },
   releaseTime: { min: 0, max: 2, label: 'calm time (s)' },
-  maxSpeed: { min: 0.5, max: 6, label: 'speed cap (m/s)' },
-  aero: { min: 0, max: 6, label: 'air drag' },
-  // tiny compliances are shown scaled so the sliders read as plain numbers
-  bendCompliance: { min: 0.01, max: 5, step: 0.01, scale: 1e3, label: 'bend softness ×1e-3' },
+  maxSpeed: { min: 1, max: 12, label: 'speed cap (m/s)' },
+  aero: { min: 0, max: 3, label: 'air drag' },
+  // compliances span decades: shown scaled so the sliders read as plain numbers
+  bendCompliance: { min: 0.1, max: 50, step: 0.1, scale: 1e-3, label: 'bend softness ×1e3' },
+  bendRestKeep: { min: 0, max: 1, step: 0.01, label: 'fold memory' },
   stretchCompliance: { min: 0, max: 10, step: 0.01, scale: 1e6, label: 'stretch ×1e-6' },
-  volumeCompliance: { min: 0.1, max: 4, step: 0.05, scale: 1e2, label: 'volume softness ×1e-2' },
-  swingDamping: { min: 0.5, max: 12, label: 'hanger swing damping' },
+  compressionCompliance: { min: 0, max: 1, step: 0.005, label: 'compression softness' },
+  selfCollision: { min: 0, max: 1.2, step: 0.05, label: 'self-collision thickness' },
+  swingDamping: { min: 0, max: 6, label: 'hook friction' },
 }
 
 /** Physics values → what the sliders display. */

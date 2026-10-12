@@ -143,6 +143,9 @@ export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): 
   }
   const inside = new THREE.Color(opts.inside ?? '#000000')
   if (opts.inside) mat.side = THREE.DoubleSide
+  // a transparent double-sided material is otherwise drawn as two one-sided passes, which
+  // skips the inside shading below (the modal copy is transparent for its fades)
+  mat.forceSinglePass = true
   mat.onBeforeCompile = (shader) => {
     if (opts.displacement) patchDisplacement(shader, opts.displacement, true)
     shader.uniforms.uKnit = { value: knit }
@@ -153,22 +156,24 @@ export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): 
     shader.uniforms.uInside = { value: inside }
 
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aAO;\nvarying float vAO;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO = aAO;')
+      .replace('#include <common>', '#include <common>\nattribute float aAO;\nattribute float aCollar;\nvarying float vAO;\nvarying float vCollar;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO = aAO;\nvCollar = aCollar;')
 
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nuniform sampler2D uKnit;\nuniform vec2 uKnitRepeat;\nuniform float uKnitScale;\nuniform float uFade;\nuniform vec3 uInside;\nvarying float vAO;',
+        '#include <common>\nuniform sampler2D uKnit;\nuniform vec2 uKnitRepeat;\nuniform float uKnitScale;\nuniform float uFade;\nuniform vec3 uInside;\nvarying float vAO;\nvarying float vCollar;',
       )
       .replace(
         '#include <map_fragment>',
         /* glsl */ `#include <map_fragment>
         #ifdef DOUBLE_SIDED
-          // inside of the tube: the same fabric, shaded down (sublimated colour prints
-          // through). Using the map's own colour means nothing contrasts where a back
-          // face peeks out along a tight seam fold.
-          if (!gl_FrontFacing) diffuseColor.rgb = mix(diffuseColor.rgb, uInside, 0.15) * 0.62;
+          // inside of the tube: mostly the plain base colour, shaded down. Seen through the
+          // neck opening, the other panel's print (stripes, numbers, collar band) on the
+          // inside read as see-through fabric; a hint of the map keeps a back face that
+          // peeks out along a tight seam fold from contrasting. The collar band is rib on
+          // both faces: its inner face keeps the band colour, a little shaded.
+          if (!gl_FrontFacing) diffuseColor.rgb = vCollar > 0.5 ? diffuseColor.rgb * 0.8 : mix(diffuseColor.rgb, uInside, 0.85) * 0.55;
         #endif`,
       )
       .replace(

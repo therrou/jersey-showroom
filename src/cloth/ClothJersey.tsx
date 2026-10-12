@@ -20,7 +20,7 @@ export const modalPointer = {
   vel: new THREE.Vector3(),
 }
 
-export const CLOTH_GRID = { high: { cols: 48, rows: 36, substeps: 12 }, low: { cols: 30, rows: 23, substeps: 8 } }
+export const CLOTH_GRID = { high: { cols: 48, rows: 36, substeps: 10 }, low: { cols: 30, rows: 23, substeps: 8 } }
 export const modalKitWidth = (q: 'high' | 'low') => (q === 'high' ? 4096 : 2048)
 const WIND_RADIUS = 0.24
 
@@ -31,9 +31,11 @@ interface Props {
   fade: { value: number; to?: number }
   interactive: boolean
   onReady?: () => void
+  /** Written every frame: where the simulated hanger actually is (pivot + unwrapped yaw). */
+  live?: ClothTarget
 }
 
-export function ClothJersey({ index, start, target, fade, interactive, onReady }: Props) {
+export function ClothJersey({ index, start, target, fade, interactive, onReady, live }: Props) {
   const quality = useRack((s) => s.quality)
   const grid = CLOTH_GRID[quality]
   const source = use(jerseyAssets()).cloth(quality, grid)
@@ -47,6 +49,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
     g.setAttribute('uv', source.geometry.getAttribute('uv'))
     if (source.geometry.getAttribute('uv1')) g.setAttribute('uv1', source.geometry.getAttribute('uv1'))
     g.setAttribute('aAO', source.geometry.getAttribute('aAO'))
+    if (source.geometry.getAttribute('aCollar')) g.setAttribute('aCollar', source.geometry.getAttribute('aCollar'))
     g.setAttribute('position', source.geometry.getAttribute('position').clone())
     g.setAttribute('normal', source.geometry.getAttribute('normal').clone())
     return g
@@ -89,10 +92,10 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
       init: {
         particles: source.particles,
         edges: source.edges,
-        bends: source.bends,
         thickness: source.thickness,
         pins: source.pins,
         triangles: source.triangles,
+        pattern: source.pattern,
         draped: source.draped,
         drop: JERSEY_DROP,
         seed: index * 1.37 + 0.31,
@@ -118,7 +121,14 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
     }
     const s = io.current
     const frame = s.latest
-    if (frame) {
+    if (frame?.type === 'idle') {
+      // the cloth is asleep: nothing to re-skin, just take the buffer back
+      s.latest = null
+      if (frame.buffer.length === source.particles.length) s.spare = frame.buffer
+    }
+    // (a frame from before a quality switch is sized for the other mesh: drop it)
+    else if (frame && frame.positions.length !== source.particles.length) s.latest = null
+    else if (frame) {
       s.latest = null
       const pos = geometry.getAttribute('position') as THREE.BufferAttribute
       const P = frame.positions
@@ -130,6 +140,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
       const q = frame.pose
       hangerRef.current?.position.set(q[0], q[1], q[2])
       hangerRef.current?.quaternion.set(q[3], q[4], q[5], q[6])
+      if (live) Object.assign(live, { x: q[0], y: q[1], z: q[2], yaw: q[7] })
       s.spare = P
       if (!ready) {
         setReady(true)

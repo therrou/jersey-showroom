@@ -6,6 +6,7 @@ import {
   RigidBody,
   useBeforePhysicsStep,
   useSphericalJoint,
+  type RapierCollider,
   type RapierRigidBody,
 } from '@react-three/rapier'
 import * as THREE from 'three'
@@ -26,6 +27,12 @@ const YAW_INERTIA = 0.018
 const MAX_SPIN = 10
 const TILT_LIMIT = THREE.MathUtils.degToRad(40)
 const TILT_K = 3
+// After the put-back, the jersey only starts colliding again once its neighbours have slid
+// clear: it lands in its turned-out slot while they're still making room.
+const REJOIN_MS = 1400
+// Side-on jerseys draw the light mesh; the turned-out one swaps to the detailed mesh at
+// once, and back only after it has turned side-on again (so the swap is never seen).
+const LOD_DOWN_MS = 1100
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 const _q = new THREE.Quaternion()
@@ -46,6 +53,7 @@ export function HangerRig({ index, homeX }: Props) {
   const trolley = useRef<RapierRigidBody>(null)
   const hanger = useRef<RapierRigidBody>(null)
   const group = useRef<THREE.Group>(null)
+  const body = useRef<RapierCollider>(null)
   useSphericalJoint(trolley as RefObject<RapierRigidBody>, hanger as RefObject<RapierRigidBody>, [
     [0, 0, 0],
     [0, 0, 0],
@@ -53,7 +61,10 @@ export function HangerRig({ index, homeX }: Props) {
 
   const quality = useRack((s) => s.quality)
   const kit = use(jerseyKit(index, quality === 'high' ? 2048 : 1024))
-  const mesh = use(jerseyAssets()).rack(quality)
+  const assets = use(jerseyAssets())
+  const mesh = assets.rack(quality)
+  const farMesh = assets.rackFar(quality)
+  const fabric = useRef<THREE.Mesh>(null)
   // small per-jersey irregularity so the rack doesn't look cloned
   const seed = useMemo(() => index * 1.37 + 0.31, [index])
   const yawJitter = useMemo(() => Math.sin(seed * 12.9) * 0.1, [seed])
@@ -87,20 +98,41 @@ export function HangerRig({ index, homeX }: Props) {
   const target = useRef({ x: homeX, yaw: SIDE_YAW + yawJitter, hovered: false })
 
   useEffect(() => {
+    let lodT = 0
+    const lod = (near: boolean) => {
+      window.clearTimeout(lodT)
+      const show = (m: typeof mesh) => fabric.current && (fabric.current.geometry = m.geometry)
+      if (near) show(mesh)
+      else lodT = window.setTimeout(() => show(farMesh), LOD_DOWN_MS)
+    }
     const apply = (hovered: number | null) => {
       target.current.x = slotPositions(JERSEYS.length, hovered)[index]
       target.current.yaw = hovered === index ? 0 : SIDE_YAW + yawJitter
       target.current.hovered = hovered === index
+      lod(hovered === index)
     }
     apply(useRack.getState().hovered)
-    // the jersey lifted into the modal disappears from the rack until it's put back
-    const show = (lifted: number | null) => group.current && (group.current.visible = lifted !== index)
+    // the jersey lifted into the modal disappears from the rack until it's put back, and
+    // stops colliding: it's placed straight into its slot for the put-back, which would
+    // otherwise overlap the neighbours and fling them
+    let rejoin = 0
+    const show = (lifted: number | null) => {
+      if (group.current) group.current.visible = lifted !== index
+      window.clearTimeout(rejoin)
+      if (lifted === index) body.current?.setCollisionGroups(GROUP_NONE)
+      else rejoin = window.setTimeout(() => body.current?.setCollisionGroups(GROUP_JERSEY), REJOIN_MS)
+    }
     show(useRack.getState().lifted)
-    return useRack.subscribe((s, prev) => {
+    const off = useRack.subscribe((s, prev) => {
       if (s.hovered !== prev.hovered) apply(s.hovered)
-      if (s.lifted !== prev.lifted) show(s.lifted)
+      if (s.lifted !== prev.lifted && (s.lifted === index || prev.lifted === index)) show(s.lifted)
     })
-  }, [index, yawJitter])
+    return () => {
+      off()
+      window.clearTimeout(rejoin)
+      window.clearTimeout(lodT)
+    }
+  }, [index, yawJitter, mesh, farMesh])
 
   useBeforePhysicsStep((world) => {
     const t = trolley.current
@@ -276,6 +308,7 @@ export function HangerRig({ index, homeX }: Props) {
         canSleep={false}
       >
         <CuboidCollider
+          ref={body}
           args={box.args}
           position={[0, box.y, box.z]}
           mass={0.5}
@@ -286,8 +319,9 @@ export function HangerRig({ index, homeX }: Props) {
         <CuboidCollider args={[0.2, 0.02, 0.02]} position={[0, -JERSEY_DROP - 0.02, 0]} mass={0.15} collisionGroups={GROUP_NONE} />
         <group ref={group}>
           <mesh
+            ref={fabric}
             position={[0, -JERSEY_DROP, 0]}
-            geometry={mesh.geometry}
+            geometry={farMesh.geometry}
             material={material}
             customDepthMaterial={depthMaterial}
             castShadow
