@@ -112,8 +112,8 @@ export interface FabricOptions {
   /** Baked garment maps on UV1 (GLB mesh): tangent-space normal (folds, seams, wrinkles)
    *  and ambient occlusion (replaces the per-vertex `aAO`). */
   maps?: { normal: THREE.Texture; ao: THREE.Texture }
-  /** Render both sides; the inside of the tube shows this colour (the kit's base),
-   *  shaded down, with no lettering — twill is sewn on the outside. */
+  /** Render both sides; the inside of the tube shows the kit colour at that spot shaded
+   *  down, nudged toward this colour (the kit's base). */
   inside?: string
 }
 
@@ -165,7 +165,10 @@ export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): 
         '#include <map_fragment>',
         /* glsl */ `#include <map_fragment>
         #ifdef DOUBLE_SIDED
-          if (!gl_FrontFacing) diffuseColor.rgb = uInside * 0.6;
+          // inside of the tube: the same fabric, shaded down (sublimated colour prints
+          // through). Using the map's own colour means nothing contrasts where a back
+          // face peeks out along a tight seam fold.
+          if (!gl_FrontFacing) diffuseColor.rgb = mix(diffuseColor.rgb, uInside, 0.15) * 0.62;
         #endif`,
       )
       .replace(

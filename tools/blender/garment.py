@@ -38,6 +38,7 @@ YOKE_RADIUS = 0.014  # vertical half-thickness
 YOKE_DEPTH = 0.022  # front-to-back half depth
 PAD_GAP = 0.004
 BODY_DEPTH = (0.03, 0.02)
+SLEEVE_DEPTH = 0.034  # half depth of the sleeve tubes
 ARMPIT_SOFT = (0.05, 0.16)
 PREPOSE = True
 FOLD_DEPTH = 0.05
@@ -70,7 +71,8 @@ def half_depth(x, y, d_seam):
     seams, flattened at the shoulders by the hanger."""
     body = BODY_DEPTH[0] + BODY_DEPTH[1] * smoothstep(-0.04, -0.3, y)
     sleeve = smoothstep(0.26, 0.4, abs(x)) * smoothstep(-0.2, -0.32, y)
-    depth = body * (1 - 0.25 * sleeve)
+    # sleeves are their own round tubes, deeper than the flattened body
+    depth = body * (1 - sleeve) + SLEEVE_DEPTH * sleeve
     return depth * math.sqrt(smoothstep(0.0, 0.11, d_seam))
 
 

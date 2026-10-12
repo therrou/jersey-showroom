@@ -5,7 +5,6 @@ import * as THREE from 'three'
 import { jerseyAssets } from '../jersey/assets'
 import { createFabricMaterial } from '../jersey/fabricMaterial'
 import type { JerseyKit } from '../jersey/jerseyTexture'
-import { RINK_BLUE } from '../scene/Room'
 import { rackScreenPose } from '../scene/RackSnapshot'
 import { useRack, type ScreenPose } from '../state/store'
 import { CLOTH_GRID, ClothJersey, modalPointer } from './ClothJersey'
@@ -19,6 +18,11 @@ const CENTER: ClothTarget = { x: 0, y: 0, z: 0, yaw: 0 }
 /** Lift-off / put-back move faster than a carousel step. */
 const LIFT_GLIDE = { stiffness: 42, maxAccel: 14 }
 const CLOSE_MS = 700
+/** After landing, the modal copy stays on top until the rack has redrawn its own. */
+export const HANDOFF_MS = 150
+/** Carousel: the old jersey is gone before the next one starts to appear. */
+const STEP_OUT = 0.26
+const STEP_GAP = 0.04
 
 interface Fade {
   value: number
@@ -146,19 +150,25 @@ export function ModalScene() {
         const start = fromScreen(s.openFrom, camera, size.height)
         setEntries([spawn(s.open, start, { value: 1, to: 1, delay: 0, duration: 0.01 }, true)])
       }
-      // carousel step: old one drifts up and fades, new one rises from below and fades in
+      // carousel step, in sequence: the old one drifts up a touch and fades out, then the
+      // next one fades in while rising gently into place
       if (s.phase === 'open' && s.open !== prev.open && s.open !== null && prev.open !== null) {
         yaw.current = { base: 0, drag: 0 }
         const dir = s.stepDir
         setEntries((list) => {
           const old = list[list.length - 1]
           if (old) {
-            old.target.current = { ...old.target.current, y: old.target.current.y + 0.08, x: -dir * 0.06 }
-            // cross-dissolve: the old one lingers while the new one's cloth spins up
-            Object.assign(old.fade, { to: 0, delay: 0.1, duration: 0.32 })
+            old.target.current = { ...old.target.current, y: old.target.current.y + 0.035, x: -dir * 0.025 }
+            Object.assign(old.fade, { to: 0, delay: 0, duration: STEP_OUT })
           }
-          const start = { x: dir * 0.1, y: -0.3, z: 0, yaw: 0 }
-          return [...list.slice(-1), spawn(s.open!, start, { value: 0, to: 1, delay: 0.02, duration: 0.45 }, false)]
+          const start = { x: dir * 0.03, y: -0.09, z: 0, yaw: 0 }
+          const next = spawn(s.open!, start, { value: 0, to: 1, delay: STEP_OUT + STEP_GAP, duration: 0.42 }, false)
+          // hold it below until it starts to show, so the rise is seen, not spent invisible
+          next.target.current = { ...start }
+          window.setTimeout(() => {
+            if (next.target.current.y === start.y) next.target.current = { ...CENTER, yaw: yaw.current.base }
+          }, (STEP_OUT + STEP_GAP) * 1000)
+          return [...list.slice(-1), next]
         })
       }
       // close: fly back to the rack slot and fade out on arrival
@@ -168,12 +178,12 @@ export function ModalScene() {
           if (!active) return list
           const pose = s.open !== null ? rackScreenPose(s.open) : null
           active.target.current = pose ? { ...fromScreen(pose, camera, size.height), glide: LIFT_GLIDE } : { ...CENTER, y: -0.3 }
-          Object.assign(active.fade, { to: 0, delay: CLOSE_MS / 1000 - 0.28, duration: 0.24 })
+          // no fade: it lands on the rack copy's pixels and is swapped out under them
           return [active]
         })
         window.setTimeout(() => useRack.getState().closed(), CLOSE_MS)
       }
-      if (s.phase === 'closed' && prev.phase !== 'closed') setEntries([])
+      if (s.phase === 'closed' && prev.phase !== 'closed') window.setTimeout(() => setEntries([]), HANDOFF_MS)
     })
   }, [camera, size])
 
@@ -247,7 +257,7 @@ export function ModalScene() {
       <Environment resolution={256} frames={1} environmentIntensity={0.55}>
         <Lightformer intensity={2} position={[0, 3, 3]} scale={[5, 2, 1]} />
         <Lightformer intensity={0.6} position={[-4, 0, 2]} rotation-y={Math.PI / 2} scale={[3, 2, 1]} />
-        <Lightformer intensity={2.2} color={RINK_BLUE} position={[0, 0, -3]} scale={[6, 1, 1]} />
+        <Lightformer intensity={0.9} color="#a9bbd4" position={[0, 0, -3]} scale={[6, 1, 1]} />
       </Environment>
       <hemisphereLight args={['#dfe8ff', '#14171b', 0.18]} />
       {/* key: high and to the side so sleeves, collar and folds cast real shadows */}
@@ -267,7 +277,8 @@ export function ModalScene() {
         shadow-camera-far={7}
       />
       <directionalLight position={[2, 0.2, 1.5]} intensity={0.45} color="#e8eeff" />
-      <directionalLight position={[0.5, 0.6, -2.5]} intensity={2.4} color={RINK_BLUE} />
+      {/* soft cool rim from behind: separates the jersey from the backdrop without tinting its edges */}
+      <directionalLight position={[0.5, 0.6, -2.5]} intensity={0.9} color="#d3dbe8" />
       <PointerWind />
       <Suspense fallback={null}>
         <ShaderPrewarm />

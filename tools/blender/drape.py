@@ -20,6 +20,8 @@ SELF_RADIUS = 0.75  # × edge length
 SELF_EXCLUDE = 1.2
 SLEEVE_HANG_DEG = 24
 SLEEVE_GUIDE_K = 0.02
+SLEEVE_GAP = 0.016  # sleeve hangs this far off the body
+SLEEVE_ROUND = 0.75  # sleeves keep at least this much of their tube depth
 
 
 def mesh_arrays(obj):
@@ -104,7 +106,10 @@ def build_solver(m):
         target[:, 2] = ty - (m["py"] - m["co"][:, 2])  # same vertical offset (garment shift)
         d.set_guides(target, w, SLEEVE_GUIDE_K)
     spacing = np.median(rest)
-    d.set_self_collision(P, SELF_RADIUS * spacing, SELF_EXCLUDE * spacing)
+    sl = (s > 0.02) & (r > 0.12)
+    bd = s < -0.02
+    d.set_self_collision(P, SELF_RADIUS * spacing, SELF_EXCLUDE * spacing, sl, bd, SLEEVE_GAP)
+    d.pair_min = np.where(sl[pairs[:, 0]], SLEEVE_ROUND, 0.0)
     return d
 
 

@@ -359,7 +359,9 @@ function ventFill(p: Painter, color: string) {
   const t = tile.getContext('2d')!
   t.fillStyle = p.style(color, H.knit, R.vent)
   t.fillRect(0, 0, 20, 20)
-  t.fillStyle = p.pass === 'color' ? 'rgba(0,0,0,0.38)' : gray(H.vent)
+  // the holes show the same fabric a layer down: a faint tone in colour, the real
+  // perforation lives in the height pass (dark dots read as dirt on light kits)
+  t.fillStyle = p.pass === 'color' ? 'rgba(0,0,0,0.1)' : gray(H.vent)
   for (const [cx, cy] of [
     [5, 5],
     [15, 15],
@@ -524,6 +526,41 @@ export interface JerseyKit {
   rough: THREE.CanvasTexture
 }
 
+/**
+ * Grow each panel's edge colours outward past the outline. Seam vertices sit exactly on
+ * the outline, so bilinear filtering and mipmaps sample just outside it: without this the
+ * fill there (the kit's base colour) bleeds in as a thin line along every seam.
+ */
+function bleedEdges(canvas: HTMLCanvasElement, x0: number, w: number, h: number, s: number) {
+  const tmp = document.createElement('canvas')
+  tmp.width = w
+  tmp.height = h
+  const t = tmp.getContext('2d')!
+  t.setTransform(s, 0, 0, -s, -BOUNDS.minX * s, BOUNDS.maxY * s)
+  silhouettePath(t)
+  t.setTransform(1, 0, 0, 1, 0, 0)
+  t.save()
+  t.clip()
+  t.drawImage(canvas, x0, 0, w, h, 0, 0, w, h)
+  t.restore()
+  t.globalCompositeOperation = 'destination-over'
+  for (const r of [1, 2, 4, 8, 16, 32]) {
+    for (const [dx, dy] of [
+      [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1],
+    ]) {
+      t.drawImage(tmp, dx * r, dy * r)
+    }
+  }
+  const ctx = canvas.getContext('2d')!
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.beginPath()
+  ctx.rect(x0, 0, w, h)
+  ctx.clip()
+  ctx.drawImage(tmp, x0, 0)
+  ctx.restore()
+}
+
 function paintAtlas(j: Jersey, width: number, pass: Pass, crest: HTMLImageElement | null) {
   const half = width / 2
   const height = Math.round((half * BOUNDS.height) / BOUNDS.width)
@@ -544,6 +581,7 @@ function paintAtlas(j: Jersey, width: number, pass: Pass, crest: HTMLImageElemen
     ctx.setTransform(s, 0, 0, -s, i * half - BOUNDS.minX * s, BOUNDS.maxY * s)
     drawSide(painter, j, side, crest)
     ctx.restore()
+    bleedEdges(canvas, i * half, half, height, s)
   })
   const tex = new THREE.CanvasTexture(canvas)
   tex.anisotropy = 8

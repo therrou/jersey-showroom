@@ -4,7 +4,7 @@ import { AnimatePresence, motion, type Variants } from 'motion/react'
 import * as THREE from 'three'
 import { JERSEYS } from '../data/jerseys'
 import { modalKitWidth } from '../cloth/ClothJersey'
-import { ModalScene } from '../cloth/ModalScene'
+import { HANDOFF_MS, ModalScene } from '../cloth/ModalScene'
 import { jerseyKit } from '../jersey/assets'
 import { useBackdrop } from '../scene/RackSnapshot'
 import { useRack } from '../state/store'
@@ -159,7 +159,17 @@ export function JerseyModal() {
     return () => window.removeEventListener('keydown', onKey)
   }, [phase])
 
-  const active = phase !== 'closed'
+  // stay up (and rendering) a moment after closing, until the rack has redrawn the jersey
+  // under it, so the put-back never shows a frame without either copy
+  const [active, setActive] = useState(false)
+  useEffect(() => {
+    if (phase !== 'closed') {
+      setActive(true)
+      return
+    }
+    const t = window.setTimeout(() => setActive(false), HANDOFF_MS)
+    return () => window.clearTimeout(t)
+  }, [phase])
   return (
     <>
       <Backdrop />

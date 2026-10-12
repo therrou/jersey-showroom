@@ -64,7 +64,9 @@ class Drape:
         i, j = self.pairs[:, 0], self.pairs[:, 1]
         d = self.x[i] - self.x[j]
         L = np.linalg.norm(d, axis=1) + 1e-12
-        lo = self.pair_rest * min_frac
+        # per-pair minimum (sleeves hold more of their roundness than the body)
+        frac = np.maximum(min_frac, getattr(self, "pair_min", 0.0))
+        lo = self.pair_rest * frac
         C = np.where(L < lo, L - lo, (L - self.pair_rest) * k_soft)
         wi, wj = self.inv_m[i], self.inv_m[j]
         ws = wi + wj
@@ -97,11 +99,15 @@ class Drape:
         over = n > L
         self.x[i[over]] = self.x[p[over]] + d[over] * (L[over] / n[over])[:, None]
 
-    def set_self_collision(self, pattern_xy, radius, exclude):
+    def set_self_collision(self, pattern_xy, radius, exclude, sleeve=None, body=None, gap=0.0):
         """Vertex repulsion between parts of the garment that are far apart in the flat
-        pattern (sleeve vs body, fold vs fold), so the drape can't pass through itself."""
+        pattern (sleeve vs body, fold vs fold), so the drape can't pass through itself.
+        Sleeve-vs-body contacts keep a larger `gap`, so a sleeve hangs just off the body
+        instead of lying glued to it."""
         self.sc = (pattern_xy, radius, exclude)
+        self.sc_parts = (sleeve, body, gap)
         self.sc_pairs = None
+        self.sc_r = None
 
     def _find_close(self, r):
         x = self.x
@@ -133,15 +139,23 @@ class Drape:
         d = np.linalg.norm(x[I] - x[J], axis=1)
         m = d < r
         I, J = I[m], J[m]
-        P, _, excl = self.sc
+        P, base, excl = self.sc
         far = np.linalg.norm(P[I] - P[J], axis=1) > excl
-        return np.stack([I[far], J[far]], 1)
+        I, J = I[far], J[far]
+        sleeve, body, gap = self.sc_parts
+        rr = np.full(len(I), base)
+        if sleeve is not None and gap > base:
+            sb = (sleeve[I] & body[J]) | (body[I] & sleeve[J])
+            rr[sb] = gap
+        keep = np.linalg.norm(x[I] - x[J], axis=1) < rr
+        self.sc_r = rr[keep]
+        return np.stack([I[keep], J[keep]], 1)
 
     def _self_collide(self, acc, cnt):
-        P, r, _ = self.sc
         ij = self.sc_pairs
         if ij is None or len(ij) == 0:
             return
+        r = self.sc_r
         i, j = ij[:, 0], ij[:, 1]
         d = self.x[i] - self.x[j]
         L = np.linalg.norm(d, axis=1) + 1e-12
@@ -230,7 +244,7 @@ class Drape:
         free = self.inv_m > 0
         self.x[free] += v[free] + GRAVITY * dt * dt
         if hasattr(self, "sc") and rebuild_hf:
-            self.sc_pairs = self._find_close(self.sc[1] * 1.8)
+            self.sc_pairs = self._find_close(max(self.sc[1] * 1.8, self.sc_parts[2] * 1.3))
         for _ in range(iters):
             acc = np.zeros_like(self.x)
             cnt = np.zeros(self.n)

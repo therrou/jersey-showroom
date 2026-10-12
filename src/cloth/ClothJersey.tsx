@@ -58,6 +58,9 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
   )
   const skinScratch = useMemo(() => createSkinScratch(source), [source])
   const depthMaterial = useMemo(() => new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), [])
+  // Depth-only pre-pass: while the jersey fades, only its front-most surface draws, so
+  // the back panel (its lettering) never ghosts through the front.
+  const prepass = useMemo(() => new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), [])
 
   const hangerRef = useRef<THREE.Group>(null)
   const [ready, setReady] = useState(false)
@@ -204,6 +207,18 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
         onPointerDown={onPointerDown}
         onPointerOver={() => interactive && (gl.domElement.style.cursor = 'grab')}
         onPointerOut={() => !io.current.grab && (gl.domElement.style.cursor = '')}
+      />
+      <mesh
+        geometry={geometry}
+        material={prepass}
+        frustumCulled={false}
+        visible={ready}
+        renderOrder={-1}
+        raycast={() => null}
+        // a faded-out jersey must not keep occluding the next one
+        onBeforeRender={() => {
+          prepass.depthWrite = material.depthWrite = fade.value > 0.01
+        }}
       />
       <group ref={hangerRef} visible={ready}>
         <Hanger fade={fade} />
