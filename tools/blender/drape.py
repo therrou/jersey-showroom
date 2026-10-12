@@ -85,6 +85,8 @@ def build_solver(m):
     d = xpbd.Drape(m["co"], edges, rest, bends, bend_rest, pairs, pair_rest, pins, sleeve, body_front,
                    (bar, garment.BAR_RADIUS, garment.BAR_DEPTH_SCALE))
     d.set_tethers(P)
+    if "yoke" in m:
+        d.bars.append((np.array(m["yoke"]), garment.YOKE_RADIUS, garment.YOKE_DEPTH / garment.YOKE_RADIUS))
     # sleeves: pulled (x/z only) toward the pattern pose swung down by SLEEVE_HANG_DEG
     # about the shoulder point
     if SLEEVE_HANG_DEG:
@@ -114,6 +116,7 @@ def run(spacing=RENDER_SPACING, name="JerseyDrape", **solver):
     obj, shift = garment.build_tube(spacing, name)
     garment.build_hanger_collider().hide_render = False
     m = mesh_arrays(obj)
+    m["yoke"] = [list(p) for p in obj["yoke"]]
     d = build_solver(m)
     t = time.time()
     x = d.run(**solver)
@@ -129,7 +132,7 @@ def smooth_shoulders(x, m, iters=12, alpha=0.5):
     me_d = np.array([d.value for d in bpy.data.objects["JerseyDrape"].data.attributes["seam_dist"].data]) \
         if "JerseyDrape" in bpy.data.objects else None
     ds = me_d if me_d is not None else np.zeros(len(x))
-    w = np.where((m["py"] > -0.16) & (np.abs(m["px"]) < garment.PIN_HALF_WIDTH + 0.06), 1.0, 0.0)
+    w = np.where((m["py"] > -0.16) & (np.abs(m["px"]) < 0.3), 1.0, 0.0)
     w *= np.clip(1 - (ds - 0.06) / 0.03, 0, 1)
     w[ds == 0] *= 0.3  # the seam line itself only a little
     e = m["edges"]

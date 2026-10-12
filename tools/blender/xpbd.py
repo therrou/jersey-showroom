@@ -37,7 +37,7 @@ class Drape:
         self.pins = pins
         self.sleeve = sleeve  # bool mask
         self.body_front = body_front  # bool mask
-        self.bar = bar  # (points Nx3 polyline, radius, depth_scale)
+        self.bars = bar if isinstance(bar, list) else [bar]  # [(polyline Nx3, radius, depth scale)]
         self._hf = None
 
     # --- constraint projection (Jacobi, averaged) ----------------------------------
@@ -171,7 +171,10 @@ class Drape:
             self.x[m, c] += (t[m, c] - self.x[m, c]) * w[m]
 
     def _bar(self):
-        pts, r, sy = self.bar
+        for bar in self.bars:
+            self._capsule(*bar)
+
+    def _capsule(self, pts, r, sy):
         x = self.x
         # distance to the polyline in a space where the bar's cross-section is round
         q = x / np.array([1.0, sy, 1.0])
@@ -246,7 +249,7 @@ class Drape:
             self._sleeves_in_front(0.004, 0.02, rebuild_hf)
             rebuild_hf = False
 
-    def run(self, steps=600, dt=1 / 240, iters=20, damping=0.04, k_stretch=1.0, k_comp=0.6, k_bend=0.1,
+    def run(self, steps=600, dt=1 / 240, iters=20, damping=0.04, k_stretch=1.0, k_comp=0.6, k_bend=0.06,
             k_pair=0.1, min_frac=0.6, noise=0.001, seed=1, log=None):
         rng = np.random.default_rng(seed)
         # a whisper of noise so buckling picks varied directions (not a perfectly mirrored fold)

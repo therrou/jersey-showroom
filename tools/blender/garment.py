@@ -12,6 +12,7 @@ y = +JERSEY_DROP).
 import math
 
 import bmesh
+import numpy as np
 import bpy
 from mathutils import Vector
 
@@ -24,17 +25,21 @@ BAR_POINTS = [(-0.19, -0.066), (-0.1, -0.045), (0.0, -0.034), (0.1, -0.045), (0.
 BAR_RADIUS = 0.011
 BAR_DEPTH_SCALE = 0.45
 
-# Shoulder seam points held by the hanger (|x| below this), resting just above the bar.
-PIN_HALF_WIDTH = 0.235  # out to the shoulder points: the shoulders stay square on
+# Seam points round the neck held by the hanger bar (|x| below this).
+PIN_HALF_WIDTH = 0.16
 PIN_GAP = 0.004
-PIN_BAND = 0.03
-# The pinned shoulder band wraps a rounded profile this thick (half), like a shaped
-# hanger, so the shoulders read filled instead of creased flat over a thin bar.
-SHOULDER_HALF = 0.022
+PIN_BAND = 0.001  # the seam line only: the yoke carries the rest
+# Shoulder pads: the jersey hangs over a padded yoke (like the references), so the
+# shoulders are full and round and the sleeves fall off their ends. A capsule swept
+# along the shoulder seam (just under it), out to round caps at the shoulder points.
+YOKE_HALF_WIDTH = 0.25
+YOKE_RADIUS = 0.04  # vertical
+YOKE_DEPTH = 0.048  # half depth front-to-back
+PAD_GAP = 0.004
 BODY_DEPTH = (0.03, 0.02)
 ARMPIT_SOFT = (0.05, 0.16)
 PREPOSE = True
-FOLD_DEPTH = 0.012
+FOLD_DEPTH = 0.05
 SLEEVE_DROP_DEG = 0
 SLEEVE_FORWARD = 0.0
 SLEEVE_BLEND = (0.0, 0.1)
@@ -105,6 +110,53 @@ def fold_seed(x, y):
     return FOLD_DEPTH * hang * body * f
 
 
+def fold_take_up(x, y, n=40):
+    """How far x moves toward the centre so the seeded folds keep the fabric's true
+    width (arc length): folded cloth is narrower, not stretched. Otherwise the stretch
+    constraints would just pull the folds flat again."""
+    if x == 0:
+        return 0.0
+    us = np.linspace(0.0, x, n + 1)
+    f = np.array([fold_seed(u, y) for u in us])
+    du = x / n
+    slope = np.diff(f) / du
+    excess = np.sum(np.sqrt(1 + slope ** 2) - 1) * du  # signed with x
+    return excess
+
+
+def place_yoke(seam_pts):
+    """Yoke centreline as (x, y) points in pattern space, YOKE_RADIUS + PAD_GAP under the
+    shoulder seam (straight across the neck)."""
+    top_pts = [p for p in seam_pts if p[1] > -0.12]
+
+    def seam_y(x):
+        near = [p[1] for p in top_pts if abs(p[0] - x) < 0.015]
+        return max(near) if near else None
+
+    xs = np.linspace(-YOKE_HALF_WIDTH, YOKE_HALF_WIDTH, 21)
+    ys = [seam_y(x) for x in xs]
+    known = [(x, y) for x, y in zip(xs, ys) if y is not None and abs(x) > 0.12]
+    # across the neck: straight line between the two seam starts
+    pts = []
+    for x, y in zip(xs, ys):
+        if y is None or abs(x) <= 0.12:
+            l = max((k for k in known if k[0] < 0), key=lambda k: k[0])
+            r = min((k for k in known if k[0] > 0), key=lambda k: k[0])
+            y = l[1] + (x - l[0]) / (r[0] - l[0]) * (r[1] - l[1])
+        pts.append((float(x), y - YOKE_RADIUS - PAD_GAP))
+    return pts
+
+
+def pad_half_depth(yoke, x, y):
+    """Half-depth of the yoke at pattern point (x, y), 0 outside it."""
+    best = 1e9
+    for a, b in zip(yoke[:-1], yoke[1:]):
+        best = min(best, pattern.dist_to_segment(x, y, a, b)[0])
+    if best >= YOKE_RADIUS:
+        return 0.0
+    return YOKE_DEPTH / YOKE_RADIUS * math.sqrt(YOKE_RADIUS ** 2 - best ** 2)
+
+
 def _key(p):
     return (round(p[0], 7), round(p[1], 7))
 
@@ -139,14 +191,16 @@ def build_tube(spacing, name, drop_shift=None):
     def d_seam(x, y):
         return min(pattern.dist_to_segment(x, y, a, b)[0] for a, b in segs)
 
+    yoke = place_yoke(seam_pts)  # pattern space, before the shift
     if drop_shift is None:
-        # lower the garment until the pinned shoulder seam sits PIN_GAP above the bar
-        gaps = []
-        for p in seam_pts:
-            x, y = p
-            if abs(x) < BAR_POINTS[-1][0] and y > -0.1:
-                gaps.append(y - (bar_y(x) + BAR_RADIUS))  # bar top: its height isn't squashed
-        drop_shift = min(gaps) - PIN_GAP
+        # place the garment so the hanger bar runs through the middle of the padded yoke
+        # (hidden inside the shoulders); the bar is straighter than the seam, so match
+        # them where the seam starts at the neck
+        x0 = min(abs(p[0]) for p in seam_pts if p[1] > -0.1)
+        yoke_y = np.interp(x0, [p[0] for p in yoke], [p[1] for p in yoke])
+        drop_shift = yoke_y - bar_y(x0)
+
+    pads = [(x, y) for x, y in yoke]
 
     bm = bmesh.new()
     lay_px = bm.verts.layers.float.new("pat_x")
@@ -168,11 +222,12 @@ def build_tube(spacing, name, drop_shift=None):
         ds = 0.0 if on_seam else d_seam(x, y)
         h = half_depth(x, y, ds)
         if 0 < ds < PIN_BAND and abs(x) < PIN_HALF_WIDTH and y > -0.1:
-            round_ = math.sqrt(smoothstep(0.0, PIN_BAND, ds))
-            h = max(h, SHOULDER_HALF * round_, BAR_RADIUS * BAR_DEPTH_SCALE + 0.003)
+            h = max(h, BAR_RADIUS * BAR_DEPTH_SCALE + 0.003)
+        if not on_seam:
+            h = max(h, pad_half_depth(pads, x, y) + 0.006)  # start clear of the pads
         Y = (h if side == 1 else -h) - fold_seed(x, y)
         dx, dy, dz = prepose(x, y) if PREPOSE else (0.0, 0.0, 0.0)
-        v = bm.verts.new((x + dx, Y - dz, y + dy - drop_shift))
+        v = bm.verts.new((x + dx - fold_take_up(x, y), Y - dz, y + dy - drop_shift))
         v[lay_px] = x
         v[lay_py] = y
         v[lay_side] = 2 if on_seam else side
@@ -229,6 +284,8 @@ def build_tube(spacing, name, drop_shift=None):
     for poly in me.polygons:
         poly.use_smooth = True
 
+    # pads in Blender coordinates for the drape solver
+    obj["yoke"] = [[x, 0.0, y - drop_shift] for x, y in pads]
     return obj, drop_shift
 
 

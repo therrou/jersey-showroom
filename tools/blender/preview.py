@@ -54,7 +54,7 @@ def setup_studio():
         o.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
         return o
 
-    light("PrevKey", "AREA", 120, (1.2, -1.6, 0.6), 1.2)
+    light("PrevKey", "AREA", 120, (-1.4, -1.0, 0.9), 0.8)  # raking, shows the drape
     light("PrevFill", "AREA", 40, (-1.6, -1.0, 0.0), 1.5)
     light("PrevRim", "AREA", 80, (0.4, 1.8, 0.5), 1.0)
     for o in bpy.data.objects:
