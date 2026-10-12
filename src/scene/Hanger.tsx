@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { JERSEY_DROP } from './rackLayout'
@@ -27,8 +27,12 @@ class HookCurve extends THREE.Curve<THREE.Vector3> {
   }
 }
 
-function useHangerGeometry() {
-  return useMemo(() => {
+/** One set for every hanger (rack and modal): the shape never changes, and a set per
+ *  modal open would pile up on the GPU. */
+let shared: { bar: THREE.BufferGeometry; hook: THREE.BufferGeometry; rod: THREE.BufferGeometry } | null = null
+function hangerGeometry() {
+  if (shared) return shared
+  {
     const y = -JERSEY_DROP
     // sits ~3 cm inside the shoulders so it never pokes through the fabric
     const barCurve = new THREE.CatmullRomCurve3([
@@ -48,14 +52,15 @@ function useHangerGeometry() {
     const rodLength = JERSEY_DROP - R + 0.004
     const rod = new THREE.CylinderGeometry(HOOK_WIRE, HOOK_WIRE, rodLength, 8)
     rod.translate(0, -R - rodLength / 2 + 0.002, 0)
-    return { bar, hook, rod }
-  }, [])
+    shared = { bar, hook, rod }
+  }
+  return shared
 }
 
 /** Wooden hanger with a chrome hook. Origin = the rail's axis, where the hook pivots.
  *  Pass `fade` (0–1) to fade it with the modal jersey. */
 export function Hanger({ fade }: { fade?: { value: number } }) {
-  const { bar, hook, rod } = useHangerGeometry()
+  const { bar, hook, rod } = hangerGeometry()
   const mats = useMemo(() => {
     if (!fade) return { wood: innerWood, chrome }
     return {
@@ -63,6 +68,14 @@ export function Hanger({ fade }: { fade?: { value: number } }) {
       chrome: Object.assign(chrome.clone(), { transparent: true }),
     }
   }, [fade])
+  // a modal hanger's own (fading) materials go with it
+  useEffect(
+    () => () => {
+      if (mats.wood !== innerWood) mats.wood.dispose()
+      if (mats.chrome !== chrome) mats.chrome.dispose()
+    },
+    [mats],
+  )
   const hookRef = useRef<THREE.Mesh>(null)
   useFrame(() => {
     // the hook swivels: whichever way the hanger turns, it stays wrapped across the rail

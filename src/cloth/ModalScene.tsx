@@ -141,6 +141,8 @@ function ShaderPrewarm() {
 export function ModalScene() {
   useFitCamera()
   const gl = useThree((s) => s.gl)
+  // (dev: renderer stats from the console, e.g. __gl.modal.info)
+  if (import.meta.env.DEV) ((window as unknown as { __gl: Record<string, unknown> }).__gl ??= {}).modal = gl
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const size = useThree((s) => s.size)
   const quality = useRack((s) => s.quality)

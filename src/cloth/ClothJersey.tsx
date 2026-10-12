@@ -48,14 +48,15 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
   const gl = useThree((s) => s.gl)
 
   const geometry = useMemo(() => {
+    // its own copy of every buffer (it's disposed when this jersey leaves, and during a
+    // ←/→ cross-dissolve another cloth is still drawing from the source's)
     const g = new THREE.BufferGeometry()
-    g.setIndex(source.geometry.getIndex())
-    g.setAttribute('uv', source.geometry.getAttribute('uv'))
-    if (source.geometry.getAttribute('uv1')) g.setAttribute('uv1', source.geometry.getAttribute('uv1'))
-    g.setAttribute('aAO', source.geometry.getAttribute('aAO'))
-    if (source.geometry.getAttribute('aCollar')) g.setAttribute('aCollar', source.geometry.getAttribute('aCollar'))
-    g.setAttribute('position', source.geometry.getAttribute('position').clone())
-    g.setAttribute('normal', source.geometry.getAttribute('normal').clone())
+    const src = source.geometry
+    g.setIndex(src.getIndex()!.clone())
+    for (const k of ['uv', 'uv1', 'aAO', 'aCollar', 'position', 'normal']) {
+      const a = src.getAttribute(k) as THREE.BufferAttribute | undefined
+      if (a) g.setAttribute(k, a.clone())
+    }
     return g
   }, [source])
 
@@ -68,6 +69,17 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
   // Depth-only pre-pass: while the jersey fades, only its front-most surface draws, so
   // the back panel (its lettering) never ghosts through the front.
   const prepass = useMemo(() => new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), [])
+  // free this jersey's GPU resources when it leaves (R3F doesn't dispose objects passed in
+  // as props): otherwise every modal open leaves its cloth buffers behind
+  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(() => () => material.dispose(), [material])
+  useEffect(
+    () => () => {
+      depthMaterial.dispose()
+      prepass.dispose()
+    },
+    [depthMaterial, prepass],
+  )
 
   const hangerRef = useRef<THREE.Group>(null)
   const meshRef = useRef<THREE.Mesh>(null)

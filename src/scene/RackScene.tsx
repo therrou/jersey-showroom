@@ -117,7 +117,9 @@ function Loaded({ onLoad }: { onLoad: () => void }) {
 
 export function RackScene() {
   // kit textures are GPU-compressed (KTX2): the loader needs a renderer to pick formats
-  initKitLoader(useThree((s) => s.gl))
+  const gl = useThree((s) => s.gl)
+  initKitLoader(gl)
+  if (import.meta.env.DEV) ((window as unknown as { __gl: Record<string, unknown> }).__gl ??= {}).rack = gl
   const quality = useRack((s) => s.quality)
   const phase = useRack((s) => s.phase)
   const [settled, setSettled] = useState(false)
