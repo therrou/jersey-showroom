@@ -1,8 +1,8 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, use, useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Environment, Lightformer } from '@react-three/drei'
 import * as THREE from 'three'
-import { getClothJerseyMesh } from '../jersey/assets'
+import { jerseyAssets } from '../jersey/assets'
 import { createFabricMaterial } from '../jersey/fabricMaterial'
 import type { JerseyKit } from '../jersey/jerseyTexture'
 import { RINK_BLUE } from '../scene/Room'
@@ -100,18 +100,21 @@ function ShaderPrewarm() {
   const scene = useThree((s) => s.scene)
   const camera = useThree((s) => s.camera)
   const quality = useRack((s) => s.quality)
+  const assets = use(jerseyAssets())
   useEffect(() => {
     const tiny = () => new THREE.CanvasTexture(document.createElement('canvas'))
     const kit: JerseyKit = { map: tiny(), bump: tiny(), rough: tiny() }
     kit.map.colorSpace = THREE.SRGBColorSpace
     const grid = CLOTH_GRID[quality]
-    const mesh = new THREE.Mesh(getClothJerseyMesh(grid.cols, grid.rows).geometry, createFabricMaterial(kit, { fade: { value: 1 } }))
+    const source = assets.cloth(quality, grid)
+    const mat = createFabricMaterial(kit, { fade: { value: 1 }, maps: source.maps, inside: source.draped ? '#808080' : undefined })
+    const mesh = new THREE.Mesh(source.geometry, mat)
     mesh.castShadow = mesh.receiveShadow = true
     mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
     scene.add(mesh)
     gl.compile(scene, camera)
     scene.remove(mesh)
-  }, [gl, scene, camera, quality])
+  }, [gl, scene, camera, quality, assets])
   return null
 }
 
@@ -266,7 +269,9 @@ export function ModalScene() {
       <directionalLight position={[2, 0.2, 1.5]} intensity={0.45} color="#e8eeff" />
       <directionalLight position={[0.5, 0.6, -2.5]} intensity={2.4} color={RINK_BLUE} />
       <PointerWind />
-      <ShaderPrewarm />
+      <Suspense fallback={null}>
+        <ShaderPrewarm />
+      </Suspense>
 
       {/* catches background drags (behind the jersey, so cloth hits win) */}
       <mesh position={[0, -0.5, -0.6]} onPointerDown={onBackgroundDown}>

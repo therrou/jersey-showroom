@@ -4,27 +4,59 @@ import { BOUNDS, LANDMARKS, SHOULDER_PINS, SILHOUETTE, signedDistance, type Vec2
 
 /**
  * Everything the rack renderer and the cloth solver need from a jersey mesh.
- * The procedural builder below is the fallback; a cleaned-up GLB can implement the
- * same shape later (render geometry + particle mapping + constraint lists).
+ * Two implementations: the GLB garment (src/jersey/glbJersey.ts: a draped render mesh
+ * bound to a simulation cage) and the procedural fallback below.
  */
 export interface JerseyMesh {
   /** Render geometry in rest pose. UV atlas: front in u∈[0,0.5], back in u∈[0.5,1]. Has `aAO`. */
   geometry: THREE.BufferGeometry
   /** Rest positions of the unique simulation particles (xyz). */
   particles: Float32Array
-  /** For each render vertex, the particle that drives it (seams share particles). */
-  renderToParticle: Uint32Array
-  /** Front/back render vertices sitting on the same seam particle (their normals get merged). */
+  /** Particle triangles (aerodynamic drag). */
+  triangles: Uint32Array
+  /** How render vertices follow the particles. */
+  skin: JerseySkin
+  /** Render vertices sitting at the same place on a seam (their normals get merged). */
   seamPairs: Uint32Array
   /** Structural + shear distance constraints, particle index pairs. */
   edges: Uint32Array
-  /** Bending (skip-one) distance constraints. */
+  /** Bending distance constraints (across interior edges). */
   bends: Uint32Array
   /** Front/back pairs that keep the garment's volume. */
   thickness: Uint32Array
-  /** Particles held by the hanger bar. */
+  /** Particles held by the hanger. */
   pins: Uint32Array
+  /** The particles' rest shape is already the hanging drape (the solver keeps it as is);
+   *  otherwise it's the flat pattern and the solver folds a drape into it. */
+  draped: boolean
+  /** Signed distance (m) to the garment's front-view outline in garment space, positive
+   *  inside: where the rack's cursor brush touches fabric. */
+  outline: (x: number, y: number) => number
+  /** Garment-space bounds of the render mesh. */
+  bounds: THREE.Box3
+  /** Baked tangent-space normal + AO maps (UV1), if the mesh has them. */
+  maps?: { normal: THREE.Texture; ao: THREE.Texture }
 }
+
+/** One particle per render vertex (seams share particles). */
+export interface DirectSkin {
+  kind: 'direct'
+  renderToParticle: Uint32Array
+}
+
+/** Each render vertex rides on a particle triangle: barycentric position plus an offset
+ *  along the triangle's interpolated normal. */
+export interface BoundSkin {
+  kind: 'bound'
+  /** 3 particle indices per render vertex. */
+  tri: Uint32Array
+  /** 3 barycentric weights per render vertex. */
+  bary: Float32Array
+  /** Offset along the interpolated particle normal, per render vertex. */
+  offset: Float32Array
+}
+
+export type JerseySkin = DirectSkin | BoundSkin
 
 export interface BuildOptions {
   cols: number
@@ -263,6 +295,10 @@ export function buildProceduralJersey({ cols, rows }: BuildOptions): JerseyMesh 
     }
   })
 
+  const r2pArr = new Uint32Array(r2p)
+  const triangles = new Uint32Array(indices.length)
+  for (let k = 0; k < indices.length; k++) triangles[k] = r2pArr[indices[k]]
+
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
@@ -272,15 +308,20 @@ export function buildProceduralJersey({ cols, rows }: BuildOptions): JerseyMesh 
   const seams = new Uint32Array(seamPairs)
   mergeSeamNormals(geometry, seams)
   geometry.computeBoundingSphere()
+  geometry.computeBoundingBox()
 
   return {
     geometry,
     particles: new Float32Array(particles),
-    renderToParticle: new Uint32Array(r2p),
+    triangles,
+    skin: { kind: 'direct', renderToParticle: r2pArr },
     seamPairs: seams,
     edges: new Uint32Array(edges),
     bends: new Uint32Array(bends),
     thickness: new Uint32Array(thickness),
     pins: new Uint32Array([...pinSet]),
+    draped: false,
+    outline: (x, y) => signedDistance(x, y),
+    bounds: geometry.boundingBox!.clone(),
   }
 }

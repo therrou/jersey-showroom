@@ -109,6 +109,12 @@ export interface FabricOptions {
   fade?: { value: number }
   /** Repeats of the knit tile across the atlas (one tile ≈ 18 mm, 16 loop columns). */
   knitRepeat?: number
+  /** Baked garment maps on UV1 (GLB mesh): tangent-space normal (folds, seams, wrinkles)
+   *  and ambient occlusion (replaces the per-vertex `aAO`). */
+  maps?: { normal: THREE.Texture; ao: THREE.Texture }
+  /** Render both sides; the inside of the tube shows this colour (the kit's base),
+   *  shaded down, with no lettering — twill is sewn on the outside. */
+  inside?: string
 }
 
 export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): THREE.MeshPhysicalMaterial {
@@ -122,12 +128,21 @@ export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): 
     roughnessMap: kit.rough,
     roughness: 1,
     metalness: 0,
-    sheen: 0.6,
-    sheenRoughness: 0.4,
-    sheenColor: new THREE.Color(0.32, 0.32, 0.34),
+    // knit polyester is matte: a little soft sheen, no glowing rims
+    sheen: 0.25,
+    sheenRoughness: 0.8,
+    sheenColor: new THREE.Color(0.26, 0.26, 0.28),
     envMapIntensity: 0.6,
     transparent: !!opts.fade,
   })
+  if (opts.maps) {
+    mat.normalMap = opts.maps.normal
+    mat.normalScale.set(1, 1)
+    mat.aoMap = opts.maps.ao
+    mat.aoMapIntensity = 1
+  }
+  const inside = new THREE.Color(opts.inside ?? '#000000')
+  if (opts.inside) mat.side = THREE.DoubleSide
   mat.onBeforeCompile = (shader) => {
     if (opts.displacement) patchDisplacement(shader, opts.displacement, true)
     shader.uniforms.uKnit = { value: knit }
@@ -135,6 +150,7 @@ export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): 
     shader.uniforms.uKnitRepeat = { value: new THREE.Vector2(repeat * 2, repeat * 0.7) }
     shader.uniforms.uKnitScale = { value: 0.35 }
     shader.uniforms.uFade = fade
+    shader.uniforms.uInside = { value: inside }
 
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aAO;\nvarying float vAO;')
@@ -143,11 +159,24 @@ export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): 
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nuniform sampler2D uKnit;\nuniform vec2 uKnitRepeat;\nuniform float uKnitScale;\nuniform float uFade;\nvarying float vAO;',
+        '#include <common>\nuniform sampler2D uKnit;\nuniform vec2 uKnitRepeat;\nuniform float uKnitScale;\nuniform float uFade;\nuniform vec3 uInside;\nvarying float vAO;',
+      )
+      .replace(
+        '#include <map_fragment>',
+        /* glsl */ `#include <map_fragment>
+        #ifdef DOUBLE_SIDED
+          if (!gl_FrontFacing) diffuseColor.rgb = uInside * 0.6;
+        #endif`,
       )
       .replace(
         '#include <normal_fragment_maps>',
         /* glsl */ `
+        #ifdef USE_NORMALMAP_TANGENTSPACE
+          // baked garment detail first; the kit bump + knit ride on top of it
+          vec3 mapN = texture2D(normalMap, vNormalMapUv).xyz * 2.0 - 1.0;
+          mapN.xy *= normalScale;
+          normal = normalize(tbn * mapN);
+        #endif
         #ifdef USE_BUMPMAP
           vec2 dH = dHdxy_fwd();
           vec2 kuv = vBumpMapUv * uKnitRepeat;
@@ -168,11 +197,16 @@ export function createFabricMaterial(kit: JerseyKit, opts: FabricOptions = {}): 
         reflectedLight.indirectDiffuse *= vAO;
         reflectedLight.indirectSpecular *= vAO;
         reflectedLight.directDiffuse *= mix(1.0, vAO, 0.55);
-        reflectedLight.directSpecular *= vAO;`,
+        reflectedLight.directSpecular *= vAO;
+        #ifdef USE_AOMAP
+          reflectedLight.directDiffuse *= mix(1.0, ambientOcclusion, 0.55);
+          reflectedLight.directSpecular *= ambientOcclusion;
+        #endif`,
       )
       .replace('#include <dithering_fragment>', '#include <dithering_fragment>\ngl_FragColor.a *= uFade;')
   }
-  mat.customProgramCacheKey = () => `fabric-${opts.displacement ? 'rack' : 'cloth'}-${opts.fade ? 'fade' : 'opaque'}`
+  mat.customProgramCacheKey = () =>
+    `fabric-${opts.displacement ? 'rack' : 'cloth'}-${opts.fade ? 'fade' : 'opaque'}-${opts.maps ? 'baked' : 'plain'}-${opts.inside ? '2s' : '1s'}`
   return mat
 }
 

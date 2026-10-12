@@ -11,9 +11,8 @@ import {
 import * as THREE from 'three'
 import { m, physics } from '../config/physics'
 import { JERSEYS } from '../data/jerseys'
-import { getRackJerseyMesh, jerseyKit } from '../jersey/assets'
+import { jerseyAssets, jerseyKit } from '../jersey/assets'
 import { createFabricDepthMaterial, createFabricMaterial, createFabricUniforms } from '../jersey/fabricMaterial'
-import { signedDistance } from '../jersey/silhouette'
 import { useRack } from '../state/store'
 import { cursor } from './CursorTracker'
 import { Hanger } from './Hanger'
@@ -54,12 +53,35 @@ export function HangerRig({ index, homeX }: Props) {
 
   const quality = useRack((s) => s.quality)
   const kit = use(jerseyKit(index, quality === 'high' ? 2048 : 1024))
-  const mesh = getRackJerseyMesh()
+  const mesh = use(jerseyAssets()).rack(quality)
   // small per-jersey irregularity so the rack doesn't look cloned
   const seed = useMemo(() => index * 1.37 + 0.31, [index])
   const yawJitter = useMemo(() => Math.sin(seed * 12.9) * 0.1, [seed])
-  const uniforms = useMemo(() => createFabricUniforms(seed), [seed])
-  const material = useMemo(() => createFabricMaterial(kit, { displacement: uniforms }), [kit, uniforms])
+  const uniforms = useMemo(() => {
+    const u = createFabricUniforms(seed)
+    // the GLB garment already hangs in real folds: the shader's seeded ones only add a
+    // little per-jersey variety so the rack doesn't look cloned
+    u.uFold.value = mesh.draped ? 0.33 : 1
+    return u
+  }, [seed, mesh])
+  const material = useMemo(
+    () =>
+      createFabricMaterial(kit, {
+        displacement: uniforms,
+        maps: mesh.maps,
+        inside: mesh.draped ? JERSEYS[index].base : undefined,
+      }),
+    [kit, uniforms, mesh, index],
+  )
+  // Rapier box around the hanging garment (garment space → hanger space)
+  const box = useMemo(() => {
+    // procedural fallback: its flat-pattern bounds include outstretched sleeves
+    if (!mesh.draped) return { args: [0.3, 0.36, 0.035] as [number, number, number], y: -JERSEY_DROP - 0.46, z: 0 }
+    const b = mesh.bounds
+    const c = b.getCenter(new THREE.Vector3())
+    const h = b.getSize(new THREE.Vector3()).multiplyScalar(0.5)
+    return { args: [h.x * 0.85, h.y * 0.9, Math.max(h.z * 0.7, 0.035)] as [number, number, number], y: c.y - JERSEY_DROP, z: c.z }
+  }, [mesh])
   const depthMaterial = useMemo(() => createFabricDepthMaterial(uniforms), [uniforms])
 
   const target = useRef({ x: homeX, yaw: SIDE_YAW + yawJitter, hovered: false })
@@ -123,7 +145,7 @@ export function HangerRig({ index, homeX }: Props) {
     _l.copy(cursor.pos).sub(p as THREE.Vector3Like).applyQuaternion(_qi.copy(_q).invert())
     const depth = 0.05 + cursor.radius - Math.abs(_l.z)
     if (depth <= 0) return
-    const inside = signedDistance(_l.x, _l.y + JERSEY_DROP) + cursor.radius
+    const inside = mesh.outline(_l.x, _l.y + JERSEY_DROP) + cursor.radius
     if (inside <= 0) return
     // velocity of the fabric under the cursor ≈ v + ω × r
     _v.copy(cursor.pos).sub(p as THREE.Vector3Like)
@@ -215,8 +237,8 @@ export function HangerRig({ index, homeX }: Props) {
         canSleep={false}
       >
         <CuboidCollider
-          args={[0.3, 0.36, 0.035]}
-          position={[0, -JERSEY_DROP - 0.46, 0]}
+          args={box.args}
+          position={[0, box.y, box.z]}
           mass={0.5}
           friction={0.08}
           restitution={0}

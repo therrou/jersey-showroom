@@ -2,9 +2,11 @@ import { use, useEffect, useMemo, useRef, useState, type RefObject } from 'react
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { m, physics } from '../config/physics'
-import { getClothJerseyMesh, jerseyKit } from '../jersey/assets'
+import { JERSEYS } from '../data/jerseys'
+import { jerseyAssets, jerseyKit } from '../jersey/assets'
 import { mergeSeamNormals } from '../jersey/JerseyGeometry'
 import { createFabricMaterial } from '../jersey/fabricMaterial'
+import { applySkin, createSkinScratch, pickParticle } from '../jersey/skin'
 import { JERSEY_DROP } from '../scene/rackLayout'
 import { Hanger } from '../scene/Hanger'
 import { useRack } from '../state/store'
@@ -34,7 +36,7 @@ interface Props {
 export function ClothJersey({ index, start, target, fade, interactive, onReady }: Props) {
   const quality = useRack((s) => s.quality)
   const grid = CLOTH_GRID[quality]
-  const source = getClothJerseyMesh(grid.cols, grid.rows)
+  const source = use(jerseyAssets()).cloth(quality, grid)
   const kit = use(jerseyKit(index, modalKitWidth(quality)))
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
@@ -43,13 +45,18 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
     const g = new THREE.BufferGeometry()
     g.setIndex(source.geometry.getIndex())
     g.setAttribute('uv', source.geometry.getAttribute('uv'))
+    if (source.geometry.getAttribute('uv1')) g.setAttribute('uv1', source.geometry.getAttribute('uv1'))
     g.setAttribute('aAO', source.geometry.getAttribute('aAO'))
     g.setAttribute('position', source.geometry.getAttribute('position').clone())
     g.setAttribute('normal', source.geometry.getAttribute('normal').clone())
     return g
   }, [source])
 
-  const material = useMemo(() => createFabricMaterial(kit, { fade }), [kit, fade])
+  const material = useMemo(
+    () => createFabricMaterial(kit, { fade, maps: source.maps, inside: source.draped ? JERSEYS[index].base : undefined }),
+    [kit, fade, source, index],
+  )
+  const skinScratch = useMemo(() => createSkinScratch(source), [source])
   const depthMaterial = useMemo(() => new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), [])
 
   const hangerRef = useRef<THREE.Group>(null)
@@ -73,9 +80,6 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
       s.latest = e.data
       s.busy = false
     }
-    const idx = source.geometry.getIndex()!.array
-    const triangles = new Uint32Array(idx.length)
-    for (let k = 0; k < idx.length; k++) triangles[k] = source.renderToParticle[idx[k]]
     worker.postMessage({
       type: 'init',
       init: {
@@ -84,7 +88,8 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
         bends: source.bends,
         thickness: source.thickness,
         pins: source.pins,
-        triangles,
+        triangles: source.triangles,
+        draped: source.draped,
         drop: JERSEY_DROP,
         seed: index * 1.37 + 0.31,
         substeps: grid.substeps,
@@ -104,15 +109,8 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
     if (frame) {
       s.latest = null
       const pos = geometry.getAttribute('position') as THREE.BufferAttribute
-      const arr = pos.array as Float32Array
-      const r2p = source.renderToParticle
       const P = frame.positions
-      for (let v = 0; v < r2p.length; v++) {
-        const p = r2p[v] * 3
-        arr[v * 3] = P[p]
-        arr[v * 3 + 1] = P[p + 1]
-        arr[v * 3 + 2] = P[p + 2]
-      }
+      applySkin(source, P, pos.array as Float32Array, skinScratch)
       pos.needsUpdate = true
       geometry.computeVertexNormals()
       mergeSeamNormals(geometry, source.seamPairs)
@@ -169,7 +167,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
     const s = io.current
     const normal = camera.getWorldDirection(new THREE.Vector3()).negate()
     s.grabPlane.setFromNormalAndCoplanarPoint(normal, e.point)
-    s.grab = { id: source.renderToParticle[best], x: e.point.x, y: e.point.y, z: e.point.z }
+    s.grab = { id: pickParticle(source, best), x: e.point.x, y: e.point.y, z: e.point.z }
     gl.domElement.style.cursor = 'grabbing'
 
     const ray = new THREE.Raycaster()

@@ -11,6 +11,7 @@ export interface ClothInit {
   thickness: Uint32Array
   pins: Uint32Array
   triangles: Uint32Array // particle-index triangles (for aero drag)
+  draped: boolean // rest positions are already the hanging drape (GLB): keep them as is
   drop: number // pivot → collar
   seed: number // per-jersey drape variation
   substeps: number
@@ -110,7 +111,7 @@ export class ClothSolver {
 
   constructor(init: ClothInit) {
     this.n = init.particles.length / 3
-    this.rest = drapeRest(init.particles, init.seed)
+    this.rest = init.draped ? new Float32Array(init.particles) : drapeRest(init.particles, init.seed)
     this.edges = init.edges
     this.bends = init.bends
     this.thick = init.thickness

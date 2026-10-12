@@ -107,7 +107,7 @@ export function RackScene() {
       {quality === 'high' && (
         <EffectComposer multisampling={0}>
           <N8AO aoRadius={0.22} intensity={2.6} distanceFalloff={0.5} aoSamples={12} denoiseSamples={6} halfRes />
-          <Bloom luminanceThreshold={0.9} intensity={0.55} mipmapBlur />
+          <Bloom luminanceThreshold={0.95} intensity={0.45} mipmapBlur />
           {/* the composer bypasses the renderer's tone mapping, so apply it here (matches the modal) */}
           <ToneMapping mode={ToneMappingMode.NEUTRAL} />
           <Vignette offset={0.25} darkness={0.55} />

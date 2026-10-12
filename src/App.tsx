@@ -4,6 +4,7 @@ import { RackScene } from './scene/RackScene'
 import { Chrome } from './ui/Chrome'
 import { JerseyModal } from './ui/JerseyModal'
 import { TunePanel } from './ui/TunePanel'
+import { FpsOverlay } from './ui/FpsOverlay'
 import { useRack } from './state/store'
 
 export function App() {
@@ -34,6 +35,7 @@ export function App() {
       <Chrome />
       <JerseyModal />
       <TunePanel />
+      <FpsOverlay />
     </main>
   )
 }
