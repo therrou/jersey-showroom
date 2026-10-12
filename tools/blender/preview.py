@@ -120,3 +120,65 @@ def contact_sheet(paths, out):
     sheet.save()
     bpy.data.images.remove(sheet)
     return out
+
+
+def kit_material(obj, kit_dir, code, tex_dir, checker=False):
+    """Preview the real kit painter output (tools/kit-export.html) on the render mesh:
+    colour / height / roughness on UV 'kit', baked normal + AO on UV 'bake'."""
+    name = f"Kit_{code}" if not checker else "Kit_checker"
+    mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+    uv_kit = nt.nodes.new("ShaderNodeUVMap")
+    uv_kit.uv_map = "kit"
+    uv_bake = nt.nodes.new("ShaderNodeUVMap")
+    uv_bake.uv_map = "bake"
+
+    def tex(path, non_color, uv, generated=None):
+        t = nt.nodes.new("ShaderNodeTexImage")
+        if generated:
+            img = bpy.data.images.get("uvgrid") or bpy.data.images.new("uvgrid", 2048, 2048)
+            img.generated_type = "COLOR_GRID"
+            t.image = img
+        else:
+            t.image = bpy.data.images.load(path, check_existing=True)
+            if non_color:
+                t.image.colorspace_settings.name = "Non-Color"
+        nt.links.new(uv.outputs["UV"], t.inputs["Vector"])
+        return t
+
+    if checker:
+        col = tex(None, False, uv_kit, generated=True)
+    else:
+        col = tex(f"{kit_dir}/{code}_color.png", False, uv_kit)
+        h = tex(f"{kit_dir}/{code}_height.png", True, uv_kit)
+        r = tex(f"{kit_dir}/{code}_rough.png", True, uv_kit)
+        nt.links.new(r.outputs["Color"], bsdf.inputs["Roughness"])
+    ao = tex(f"{tex_dir}/jersey_ao.png", True, uv_bake)
+    nmap_t = tex(f"{tex_dir}/jersey_normal.png", True, uv_bake)
+    mul = nt.nodes.new("ShaderNodeMixRGB")
+    mul.blend_type = "MULTIPLY"
+    mul.inputs["Fac"].default_value = 0.8
+    nt.links.new(col.outputs["Color"], mul.inputs["Color1"])
+    nt.links.new(ao.outputs["Color"], mul.inputs["Color2"])
+    nt.links.new(mul.outputs["Color"], bsdf.inputs["Base Color"])
+    nm = nt.nodes.new("ShaderNodeNormalMap")
+    nm.uv_map = "bake"
+    nt.links.new(nmap_t.outputs["Color"], nm.inputs["Color"])
+    if checker:
+        nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    else:
+        bump = nt.nodes.new("ShaderNodeBump")
+        bump.inputs["Strength"].default_value = 0.35
+        bump.inputs["Distance"].default_value = 0.002
+        nt.links.new(h.outputs["Color"], bump.inputs["Height"])
+        nt.links.new(nm.outputs["Normal"], bump.inputs["Normal"])
+        nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    bsdf.inputs["Sheen Weight"].default_value = 0.2
+    obj.data.materials.clear()
+    obj.data.materials.append(mat)
+    return mat

@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Kit export</title>
+  </head>
+  <body>
+    <pre id="log">painting…</pre>
+    <script type="module">
+      // Dev tool: paints kits with the real painter and saves them to tools/blender/kits/
+      // (through the kit-export middleware in vite.config.ts). Usage:
+      //   /tools/kit-export.html?kits=CAN,SWE,USA&width=2048
+      import { JERSEYS } from '/src/data/jerseys.ts'
+      import { createJerseyKit } from '/src/jersey/jerseyTexture.ts'
+
+      const log = document.getElementById('log')
+      const q = new URLSearchParams(location.search)
+      const codes = (q.get('kits') ?? 'CAN').split(',')
+      const width = Number(q.get('width') ?? 2048)
+      const save = async (canvas, name) => {
+        const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'))
+        await fetch(`/__kit-export?name=${name}`, { method: 'POST', body: blob })
+      }
+      for (const code of codes) {
+        const j = JERSEYS.find((k) => k.code === code)
+        if (!j) continue
+        const kit = await createJerseyKit(j, width)
+        await save(kit.map.image, `${code}_color.png`)
+        await save(kit.bump.image, `${code}_height.png`)
+        await save(kit.rough.image, `${code}_rough.png`)
+        log.textContent += `\n${code} saved`
+      }
+      log.textContent += '\ndone'
+      document.title = 'Kit export: done'
+    </script>
+  </body>
+</html>

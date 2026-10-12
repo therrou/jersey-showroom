@@ -123,6 +123,9 @@ def run(spacing=RENDER_SPACING, name="JerseyDrape", **solver):
     x = smooth_shoulders(x, m)
     obj.data.vertices.foreach_set("co", x.ravel())
     obj.data.update()
+    import collar
+
+    collar.keep_raw(obj)
     return report(obj, time.time() - t, shift)
 
 
