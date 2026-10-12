@@ -160,10 +160,12 @@ def _save_webp(src_png, dst, quality):
     img.colorspace_settings.name = "Non-Color"
     sc = bpy.context.scene
     s = sc.render.image_settings
+    prev = (s.file_format, s.color_mode)
     s.file_format = "WEBP"
     s.quality = quality
     s.color_mode = "RGB"
     img.save_render(dst, scene=sc)
+    s.file_format, s.color_mode = prev
     bpy.data.images.remove(img)
     return os.path.getsize(dst)
 

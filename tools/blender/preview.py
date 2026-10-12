@@ -64,6 +64,8 @@ def setup_studio():
     cam = _ensure("PrevCam", lambda: bpy.data.objects.new("PrevCam", bpy.data.cameras.new("PrevCam")))
     cam.data.lens = 85
     sc.camera = cam
+    sc.render.image_settings.file_format = "PNG"
+    sc.render.image_settings.color_mode = "RGBA"
     sc.render.resolution_x = 640
     sc.render.resolution_y = 720
     sc.render.film_transparent = False

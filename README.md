@@ -35,12 +35,14 @@ defaults live in `src/config/physics.ts`.
 - Grab-and-pull a soft patch of fabric; drag the background (or "View back" / `F`) to turn it.
   Pointer movement near the jersey stirs a local wind field.
 
-**Jersey geometry** — `JerseyMesh` interface (`src/jersey/JerseyGeometry.ts`). Procedural:
-the flat pattern (rounded outline) is Delaunay-triangulated with evenly spaced edge points, then
-inflated into two fabric layers that meet in a rounded fold (not a pinched pillow seam); seam
-normals are merged so edges shade round. Per-vertex AO is baked for the armpits, the
-sleeve/body gap and the collar. A cleaned-up GLB can implement the same interface and drop in
-via `src/jersey/assets.ts`.
+**Jersey geometry** — `JerseyMesh` interface (`src/jersey/JerseyGeometry.ts`). Default: a
+garment built in Blender (`public/models/jersey.glb`, pipeline in `tools/blender/`): a
+draped render mesh (~24k tris desktop / ~6.7k phones) with baked normal + AO maps, bound to
+a simulation cage (~2.5k / ~1.2k particles, welded tube, pins where it rests on the
+hanger). Each render vertex rides on a cage triangle (barycentric + normal offset) and is
+rebuilt after every solver step (`src/jersey/skin.ts`); the rack shows the render mesh
+directly. `?mesh=procedural` switches to the procedural fallback (flat pattern inflated
+into two layers), which also kicks in automatically if the GLB fails to load.
 
 **Kit art + material** — `src/jersey/jerseyTexture.ts` paints three aligned maps per jersey
 from `src/data/jerseys.ts`: colour, height (raised tackle-twill lettering with stitched edges,
@@ -54,6 +56,16 @@ frame (with that jersey hidden), blurs it once into a still backdrop and stops r
 Closing flies the jersey back to its slot. ←/→ cross-dissolve: the old jersey drifts up and
 fades, the next rises from below and fades in. Kits for the hovered jersey and the open
 jersey's neighbours are painted ahead of time.
+
+**Modal cloth feel** — `physics.modal` (and `?tune`): `grabStrength` / `grabRadius` /
+`grabMaxPull` (how hard and how far a grab pulls), `damping` + `releaseDamping` (calm after
+letting go), `volumeCompliance` (how springy the tube's depth is).
+
+`?fps` shows a frame-rate overlay (handy on a real phone with `pnpm dev --host`).
+
+> **TODO (follow-up):** real cut-out vent holes — alpha-tested perforations on the vent
+> panels (a mask channel from the kit painter + a custom depth material for shadows), so
+> you can see through to the inside of the tube.
 
 ## Quality tiers
 Phones / coarse pointers / narrow screens start on `low` (smaller cloth grid, 1K/2K textures,

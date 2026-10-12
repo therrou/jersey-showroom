@@ -27,6 +27,17 @@ export interface ClothConfig {
   flipDamping: number
   bendCompliance: number
   aero: number
+  /** Grab: pull per substep (0–1), soft patch radius (m), how far fabric may be pulled
+   *  from where it hangs (m). */
+  grabStrength: number
+  grabRadius: number
+  grabMaxPull: number
+  /** Velocity damping (1/s); extra damping for a moment after letting go. */
+  damping: number
+  releaseDamping: number
+  /** Front↔back volume links: compliance pulling back toward the rest depth (higher =
+   *  softer, less jelly); they always hold a minimum separation. */
+  volumeCompliance: number
 }
 
 export interface ClothTarget {
@@ -49,9 +60,8 @@ export interface ClothInput {
 const GRAVITY = -9.81
 const MASS = 0.42 // kg, a replica jersey
 const STRETCH_COMPLIANCE = 2e-8
-const THICK_COMPLIANCE = 6e-4
-const DAMPING = 0.35 // global velocity damping (1/s)
-const GRAB_RADIUS = 0.07
+const RELEASE_TIME = 0.5 // s of extra damping after letting go
+const MAX_SPEED = 2.5 // m/s, so a fling never turns into a whip
 // Rest-shape drape: the flat pattern gets soft vertical folds that deepen toward the
 // hem (same profile as the rack shader), and the hem gathers in slightly. Bending
 // constraints remember this shape, so folds re-form after the fabric is pulled.
@@ -108,6 +118,8 @@ export class ClothSolver {
   grabSet: { i: number; w: number; ox: number; oy: number; oz: number }[] = []
   grabId = -1
   time = 0
+  releaseT = 0
+  private scratch = new Float32Array(3)
 
   constructor(init: ClothInit) {
     this.n = init.particles.length / 3
@@ -164,14 +176,14 @@ export class ClothSolver {
   }
 
   /** Rest position of particle i carried by the hanger, written into out. */
-  private toWorld(i: number, out: Float32Array) {
+  private toWorld(i: number, out: Float32Array, at = i * 3) {
     const R = this.R
     const x = this.rest[i * 3]
     const y = this.rest[i * 3 + 1] - this.drop
     const z = this.rest[i * 3 + 2]
-    out[i * 3] = this.pivot[0] + R[0] * x + R[1] * y + R[2] * z
-    out[i * 3 + 1] = this.pivot[1] + R[3] * x + R[4] * y + R[5] * z
-    out[i * 3 + 2] = this.pivot[2] + R[6] * x + R[7] * y + R[8] * z
+    out[at] = this.pivot[0] + R[0] * x + R[1] * y + R[2] * z
+    out[at + 1] = this.pivot[1] + R[3] * x + R[4] * y + R[5] * z
+    out[at + 2] = this.pivot[2] + R[6] * x + R[7] * y + R[8] * z
   }
 
   /** Teleport everything (used before the first frame of a slide-in). */
@@ -250,8 +262,9 @@ export class ClothSolver {
     out[offset + 6] = qw
   }
 
-  private updateGrab(grab: ClothInput['grab']) {
+  private updateGrab(grab: ClothInput['grab'], radius: number) {
     if (!grab) {
+      if (this.grabId >= 0) this.releaseT = RELEASE_TIME
       this.grabSet = []
       this.grabId = -1
       return
@@ -266,7 +279,7 @@ export class ClothSolver {
       if (this.invMass[i] === 0) continue
       const dx = p[i * 3] - p[c], dy = p[i * 3 + 1] - p[c + 1], dz = p[i * 3 + 2] - p[c + 2]
       const d = Math.hypot(dx, dy, dz)
-      if (d < GRAB_RADIUS) this.grabSet.push({ i, w: (1 - d / GRAB_RADIUS) ** 2, ox: dx, oy: dy, oz: dz })
+      if (d < radius) this.grabSet.push({ i, w: (1 - d / radius) ** 2, ox: dx, oy: dy, oz: dz })
     }
   }
 
@@ -349,11 +362,27 @@ export class ClothSolver {
     const h = frameDt / steps
     const h2 = h * h
     const p = this.pos, prev = this.prev, v = this.vel, w = this.invMass
-    this.updateGrab(input.grab)
-    const damp = Math.max(0, 1 - DAMPING * h)
+    const cfg = input.cfg
+    this.updateGrab(input.grab, cfg.grabRadius)
+    // the grab target can't drag fabric further than grabMaxPull from where it hangs
+    let gx = 0, gy = 0, gz = 0
+    if (input.grab) {
+      gx = input.grab.x; gy = input.grab.y; gz = input.grab.z
+      const r = this.scratch
+      this.toWorld(this.grabId, r, 0)
+      const dx = gx - r[0], dy = gy - r[1], dz = gz - r[2]
+      const d = Math.hypot(dx, dy, dz)
+      if (d > cfg.grabMaxPull) {
+        const s = cfg.grabMaxPull / d
+        gx = r[0] + dx * s; gy = r[1] + dy * s; gz = r[2] + dz * s
+      }
+    }
 
     for (let s = 0; s < steps; s++) {
       this.time += h
+      const settle = this.releaseT > 0 ? cfg.releaseDamping * (this.releaseT / RELEASE_TIME) : 0
+      this.releaseT = Math.max(0, this.releaseT - h)
+      const damp = Math.max(0, 1 - (cfg.damping + settle) * h)
       this.stepHanger(h, input.target, input.cfg)
       this.applyAero(h, input.wind, input.cfg.aero)
 
@@ -375,27 +404,35 @@ export class ClothSolver {
       }
 
       if (input.grab) {
-        const g = input.grab
         for (const q of this.grabSet) {
           const j = q.i * 3
-          const k = 0.6 * q.w
-          p[j] += (g.x + q.ox - p[j]) * k
-          p[j + 1] += (g.y + q.oy - p[j + 1]) * k
-          p[j + 2] += (g.z + q.oz - p[j + 2]) * k
+          const k = cfg.grabStrength * q.w
+          p[j] += (gx + q.ox - p[j]) * k
+          p[j + 1] += (gy + q.oy - p[j + 1]) * k
+          p[j + 2] += (gz + q.oz - p[j + 2]) * k
         }
       }
 
       this.solveDistance(this.edges, this.edgeLen, STRETCH_COMPLIANCE, h2)
       this.solveDistance(this.bends, this.bendLen, input.cfg.bendCompliance, h2)
-      this.solveDistance(this.thick, this.thickLen, THICK_COMPLIANCE, h2, 0.25)
+      this.solveDistance(this.thick, this.thickLen, cfg.volumeCompliance, h2, 0.25)
 
       const inv = 1 / h
+      const vmax2 = MAX_SPEED * MAX_SPEED
       for (let i = 0; i < this.n; i++) {
         if (w[i] === 0) continue
         const j = i * 3
-        v[j] = (p[j] - prev[j]) * inv
-        v[j + 1] = (p[j + 1] - prev[j + 1]) * inv
-        v[j + 2] = (p[j + 2] - prev[j + 2]) * inv
+        let vx = (p[j] - prev[j]) * inv
+        let vy = (p[j + 1] - prev[j + 1]) * inv
+        let vz = (p[j + 2] - prev[j + 2]) * inv
+        const s2 = vx * vx + vy * vy + vz * vz
+        if (s2 > vmax2) {
+          const k = MAX_SPEED / Math.sqrt(s2)
+          vx *= k; vy *= k; vz *= k
+        }
+        v[j] = vx
+        v[j + 1] = vy
+        v[j + 2] = vz
       }
     }
   }

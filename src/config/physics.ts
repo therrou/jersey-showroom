@@ -45,6 +45,16 @@ export const physics = {
     /** Fabric: lower bend compliance = stiffer, crisper folds. */
     bendCompliance: 6e-4,
     aero: 1.4,
+    /** Grab-and-pull: pull per substep (0–1), soft patch radius (m), max pull from where
+     *  the fabric hangs (m). Lower = heavier, calmer fabric. */
+    grabStrength: 0.2,
+    grabRadius: 0.05,
+    grabMaxPull: 0.14,
+    /** Velocity damping (1/s), plus extra for half a second after letting go. */
+    damping: 1.1,
+    releaseDamping: 5,
+    /** Front↔back volume links pulling back to the rest depth (higher = softer). */
+    volumeCompliance: 4e-3,
   },
 }
 

@@ -29,19 +29,20 @@ BAR_DEPTH_SCALE = 0.45
 PIN_HALF_WIDTH = 0.16
 PIN_GAP = 0.004
 PIN_BAND = 0.001  # the seam line only: the yoke carries the rest
-# Shoulder pads: the jersey hangs over a padded yoke (like the references), so the
-# shoulders are full and round and the sleeves fall off their ends. A capsule swept
-# along the shoulder seam (just under it), out to round caps at the shoulder points.
-YOKE_HALF_WIDTH = 0.25
-YOKE_RADIUS = 0.04  # vertical
-YOKE_DEPTH = 0.048  # half depth front-to-back
+# The support the drape rests on: a wooden hanger like the reference photos, i.e. the
+# Hanger.tsx bar curve extended to the shoulder points, with a thin, wide section
+# (the visible bar is thinner; this hides inside the shoulders). Shoulders lie flat and
+# slope down over it instead of wrapping a round pad.
+YOKE_HALF_WIDTH = 0.235
+YOKE_RADIUS = 0.014  # vertical half-thickness
+YOKE_DEPTH = 0.022  # front-to-back half depth
 PAD_GAP = 0.004
 BODY_DEPTH = (0.03, 0.02)
 ARMPIT_SOFT = (0.05, 0.16)
 PREPOSE = True
 FOLD_DEPTH = 0.05
 SLEEVE_DROP_DEG = 0
-SLEEVE_FORWARD = 0.0
+SLEEVE_FORWARD = 0.045  # sleeves start (and settle) in front of the side seams
 SLEEVE_BLEND = (0.0, 0.1)
 SLEEVE_FORWARD_BLEND = (-0.03, 0.03)
 PRESSURE = 0.0
@@ -124,27 +125,17 @@ def fold_take_up(x, y, n=40):
     return excess
 
 
-def place_yoke(seam_pts):
-    """Yoke centreline as (x, y) points in pattern space, YOKE_RADIUS + PAD_GAP under the
-    shoulder seam (straight across the neck)."""
-    top_pts = [p for p in seam_pts if p[1] > -0.12]
-
-    def seam_y(x):
-        near = [p[1] for p in top_pts if abs(p[0] - x) < 0.015]
-        return max(near) if near else None
-
-    xs = np.linspace(-YOKE_HALF_WIDTH, YOKE_HALF_WIDTH, 21)
-    ys = [seam_y(x) for x in xs]
-    known = [(x, y) for x, y in zip(xs, ys) if y is not None and abs(x) > 0.12]
-    # across the neck: straight line between the two seam starts
-    pts = []
-    for x, y in zip(xs, ys):
-        if y is None or abs(x) <= 0.12:
-            l = max((k for k in known if k[0] < 0), key=lambda k: k[0])
-            r = min((k for k in known if k[0] > 0), key=lambda k: k[0])
-            y = l[1] + (x - l[0]) / (r[0] - l[0]) * (r[1] - l[1])
-        pts.append((float(x), y - YOKE_RADIUS - PAD_GAP))
-    return pts
+def place_yoke():
+    """Hanger centreline (x, y) in the garment frame: the bar, extended along its end
+    slope out to the shoulder points."""
+    pts = list(BAR_POINTS)
+    (x0, y0), (x1, y1) = pts[-2], pts[-1]
+    slope = (y1 - y0) / (x1 - x0)
+    end = (YOKE_HALF_WIDTH, y1 + slope * (YOKE_HALF_WIDTH - x1))
+    xs = np.linspace(-YOKE_HALF_WIDTH, YOKE_HALF_WIDTH, 25)
+    px = [-end[0]] + [p[0] for p in pts] + [end[0]]
+    py = [end[1]] + [p[1] for p in pts] + [end[1]]
+    return [(float(x), float(np.interp(x, px, py))) for x in xs]
 
 
 def pad_half_depth(yoke, x, y):
@@ -191,16 +182,14 @@ def build_tube(spacing, name, drop_shift=None):
     def d_seam(x, y):
         return min(pattern.dist_to_segment(x, y, a, b)[0] for a, b in segs)
 
-    yoke = place_yoke(seam_pts)  # pattern space, before the shift
+    yoke = place_yoke()  # garment frame (fixed, like the hanger)
     if drop_shift is None:
-        # place the garment so the hanger bar runs through the middle of the padded yoke
-        # (hidden inside the shoulders); the bar is straighter than the seam, so match
-        # them where the seam starts at the neck
-        x0 = min(abs(p[0]) for p in seam_pts if p[1] > -0.1)
-        yoke_y = np.interp(x0, [p[0] for p in yoke], [p[1] for p in yoke])
-        drop_shift = yoke_y - bar_y(x0)
+        # lower (or raise) the garment until its shoulder seam rests on top of the hanger
+        top = lambda x: np.interp(x, [p[0] for p in yoke], [p[1] for p in yoke]) + YOKE_RADIUS
+        gaps = [y - top(x) for x, y in seam_pts if abs(x) < YOKE_HALF_WIDTH and y > -0.12]
+        drop_shift = min(gaps) - PAD_GAP
 
-    pads = [(x, y) for x, y in yoke]
+    pads = [(x, y + drop_shift) for x, y in yoke]  # in pattern space (before the shift)
 
     bm = bmesh.new()
     lay_px = bm.verts.layers.float.new("pat_x")

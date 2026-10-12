@@ -77,3 +77,4 @@ export it, and make the existing physics drive it — without losing any current
 - Don't regress existing features; keep the procedural mesh as a fallback.
 - Material polish also pending, do it if time allows: matte the fabric (the current sheen
   glows on edges), soften the rim/bloom halo on white kits, real cut-out vent holes.
+  *Status: matte sheen + softer bloom done. **Vent holes still TODO** (follow-up, see README).*
