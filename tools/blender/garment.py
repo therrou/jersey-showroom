@@ -40,6 +40,11 @@ PAD_GAP = 0.004
 BODY_DEPTH = (0.03, 0.02)
 SLEEVE_DEPTH = 0.034  # half depth of the sleeve tubes
 ARMPIT_SOFT = (0.05, 0.16)
+# The underarm hangs collapsed (no arm in it): the tube starts flatter around the armpit,
+# where sleeve and body meet, instead of inheriting the body's depth there and holding it
+# as a round puff. Fraction of depth removed at the armpit, and its reach (m, pattern).
+ARMPIT_FLAT = 0.5
+ARMPIT_FLAT_RADIUS = 0.09
 PREPOSE = True
 FOLD_DEPTH = 0.05
 FOLD_PHASE = (0.7, 2.1, -1.3)  # phases of the seeded folds (variants.py changes them)
@@ -74,6 +79,9 @@ def half_depth(x, y, d_seam):
     sleeve = smoothstep(0.26, 0.4, abs(x)) * smoothstep(-0.2, -0.32, y)
     # sleeves are their own round tubes, deeper than the flattened body
     depth = body * (1 - sleeve) + SLEEVE_DEPTH * sleeve
+    ax, ay = pattern.LANDMARKS["armpit"]
+    d2 = ((abs(x) - ax) ** 2 + (y - ay) ** 2) / ARMPIT_FLAT_RADIUS ** 2
+    depth *= 1 - ARMPIT_FLAT * math.exp(-d2)
     return depth * math.sqrt(smoothstep(0.0, 0.11, d_seam))
 
 

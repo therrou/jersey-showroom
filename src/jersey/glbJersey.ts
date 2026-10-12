@@ -63,6 +63,8 @@ interface Cage {
   pins: Uint32Array
   side: Float32Array
   pat: Float32Array // xy per particle
+  /** Drape variants: relative offsets per particle (glTF morph targets). */
+  drapes: Float32Array[]
 }
 
 const attr = (g: THREE.BufferGeometry, name: string) => {
@@ -134,6 +136,7 @@ function buildCage(g: THREE.BufferGeometry): Cage {
     pins: new Uint32Array(pins),
     side,
     pat,
+    drapes: (g.morphAttributes.position ?? []).map(floats),
   }
 }
 
@@ -479,6 +482,7 @@ function buildMesh(renderSrc: THREE.BufferGeometry, cageSrc: THREE.BufferGeometr
     thickness: cage.thickness,
     pins: cage.pins,
     pattern: cage.pat,
+    drapes: cage.drapes.length ? cage.drapes : undefined,
     draped: true,
     outline: buildOutline(geometry, part, bounds),
     bounds,

@@ -26,6 +26,8 @@ export interface JerseyMesh {
   pins: Uint32Array
   /** Flat-pattern xy per particle, if known (stretch rests on the uncompressed fabric). */
   pattern?: Float32Array
+  /** Drape variants (relative particle offsets, 3 per particle), if baked: see variety.ts. */
+  drapes?: Float32Array[]
   /** The particles' rest shape is already the hanging drape (the solver keeps it as is);
    *  otherwise it's the flat pattern and the solver folds a drape into it. */
   draped: boolean

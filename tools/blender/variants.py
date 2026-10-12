@@ -8,9 +8,10 @@ hang and solver noise, so the jerseys on the rail don't all share one set of cre
 Each variant is a full drape of the same tube ('JerseyDrapeVar<i>': same topology and
 pattern coordinates as 'JerseyDrape', denoised like it). The export maps every render
 vertex through the pattern onto each variant and stores the difference as a shape key on
-JerseyRender / JerseyRenderLow; the collar band and facings follow the nearest body
-vertices. The web blends them per jersey (HangerRig). The cages, bakes and the modal's
-cloth all stay on the base drape.
+JerseyRender / JerseyRenderLow and the cages; the collar band and facings follow the
+nearest body vertices. The web gives each jersey its own blend (src/jersey/variety.ts):
+the rack draws it, and the modal's cloth starts from (and rests in) the same shape. The
+baked normal/AO maps stay those of the base drape.
 """
 
 import bpy
@@ -28,6 +29,10 @@ VARIANTS = [
     dict(phase=(1.6, -1.8, 2.7), hang=22, forward=0.05, fold=0.04, seed=4),
 ]
 NEAREST = 4  # body vertices a collar/facing vertex follows
+# Where the cloth rests on the hanger every variant keeps the base drape's contact (the
+# shoulder ends rest there by collision, so each variant settles them a little apart):
+# the offsets fade in over this distance below the yoke's surface (m).
+YOKE_FADE = 0.04
 
 
 def name(i):
@@ -82,7 +87,9 @@ def add_shape_keys(obj, drapes):
     me = obj.data
     n = len(me.vertices)
     get = lambda k: np.array([a.value for a in me.attributes[k].data])
-    px, py, side, part = get("pat_x"), get("pat_y"), get("side").astype(int), get("part").astype(int)
+    px, py, side = get("pat_x"), get("pat_y"), get("side").astype(int)
+    # (cages have no collar band / facings: all body)
+    part = get("part").astype(int) if "part" in me.attributes else np.zeros(n, dtype=int)
     co = _co(obj)
     deltas = [np.zeros((n, 3)) for _ in drapes]
     body = np.where(part == 0)[0]
@@ -103,6 +110,12 @@ def add_shape_keys(obj, drapes):
         idx = body[[k for _, k, _ in near]]
         for d in deltas:
             d[v] = (w[:, None] * d[idx]).sum(0) / w.sum()
+    import export  # (imports this module)
+
+    d_yoke = export._yoke_distance(co)
+    t = np.clip((d_yoke - export.PIN_REACH) / YOKE_FADE, 0, 1)
+    fade = (t * t * (3 - 2 * t))[:, None]
+    deltas = [d * fade for d in deltas]
     if me.shape_keys:
         obj.shape_key_clear()
     obj.shape_key_add(name="Basis", from_mix=False)

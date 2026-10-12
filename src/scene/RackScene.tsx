@@ -121,18 +121,29 @@ export function RackScene() {
   const quality = useRack((s) => s.quality)
   const phase = useRack((s) => s.phase)
   const [settled, setSettled] = useState(false)
+  const slowAtMin = useRef(0)
   return (
     <>
       {settled && phase === 'closed' && (
         <PerformanceMonitor
-          iterations={6}
-          // resolution first: 1× … 1.5× (capped by the screen)
+          iterations={8}
+          // resolution only, in three coarse steps (1× / 1.25× / 1.5×): every change
+          // reallocates the canvas and the effect buffers, which flashes
+          step={0.5}
+          // resume where it was (it remounts after every modal close)
+          factor={THREE.MathUtils.clamp((useRack.getState().dpr - 1) / 0.5, 0, 1)}
+          // on a 120 Hz screen anything from 50 fps up is fine; don't chase 60
+          bounds={(refresh) => (refresh > 100 ? [50, 100] : [40, 58])}
           onChange={({ factor }) =>
-            useRack.getState().setDpr(Math.min(window.devicePixelRatio, Math.round((1 + 0.5 * factor) * 10) / 10))
+            useRack.getState().setDpr(Math.min(window.devicePixelRatio, 1 + 0.5 * factor))
           }
-          // still struggling at the bottom of the range: lighter tier
-          onFallback={() => useRack.getState().setQuality('low')}
-          flipflops={3}
+          // only a genuinely slow machine loses the look (post-processing, reflective
+          // floor): still too slow at 1×. drei's own fallback just means "it keeps
+          // flip-flopping", so then it simply stops adapting.
+          onDecline={({ factor }) => {
+            if (factor === 0 && ++slowAtMin.current >= 2) useRack.getState().setQuality('low')
+          }}
+          flipflops={4}
         />
       )}
       <color attach="background" args={['#15181c']} />

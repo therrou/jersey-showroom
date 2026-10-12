@@ -7,6 +7,7 @@ import { jerseyAssets, jerseyKit } from '../jersey/assets'
 import { mergeSeamNormals } from '../jersey/JerseyGeometry'
 import { createFabricMaterial } from '../jersey/fabricMaterial'
 import { applySkin, createSkinScratch, pickParticle } from '../jersey/skin'
+import { jerseySeed, jerseyVariety, restParticles } from '../jersey/variety'
 import { JERSEY_DROP } from '../scene/rackLayout'
 import { Hanger } from '../scene/Hanger'
 import { useRack } from '../state/store'
@@ -93,7 +94,9 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
     worker.postMessage({
       type: 'init',
       init: {
-        particles: source.particles,
+        // this jersey's own drape, exactly as the rack draws it (variety.ts): it lifts off,
+        // hangs in and is put back in the same shape
+        particles: restParticles(source, jerseyVariety(index, source)),
         edges: source.edges,
         thickness: source.thickness,
         pins: source.pins,
@@ -101,7 +104,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
         pattern: source.pattern,
         draped: source.draped,
         drop: JERSEY_DROP,
-        seed: index * 1.37 + 0.31,
+        seed: jerseySeed(index),
         substeps: grid.substeps,
         start,
       },

@@ -26,8 +26,8 @@ defaults live in `src/config/physics.ts`.
   folds (`src/jersey/fabricMaterial.ts`). Each jersey also hangs differently: it blends
   drape variants baked in Blender (morph targets, `tools/blender/variants.py`), and on top
   its sleeves swing/splay about the shoulder (`src/jersey/sleeves.ts`), the hem tilts,
-  opens and turns, the folds deepen or soften (seeded). A turned-out jersey eases back to the shared
-  drape, which is what the modal cloth starts from.
+  opens and turns, the folds deepen or soften (seeded; `src/jersey/variety.ts`). The modal's
+  cloth starts from (and rests in) exactly that shape, so it never reshapes on the way.
 - Hover is picked by rail position (nearest hanger, turned-out one holds its width) rather than
   raycasting slivers, so it never flickers (`src/scene/RackHover.tsx`).
 
@@ -95,8 +95,10 @@ on the clipboard as JSON (defaults live in `src/config/physics.ts`, `CLOTH_FEEL`
 
 ## Quality tiers
 Phones / coarse pointers / narrow screens start on `low` (smaller cloth grid, 1K/2K textures,
-no post-processing, plain floor). On desktop the render scale adapts first (1×–1.5×), and only
-if that isn't enough does it drop to `low` (drei `PerformanceMonitor`, started after load).
+no post-processing, plain floor). On desktop the render scale adapts (1× / 1.25× / 1.5×; on
+120 Hz screens it only steps down below 50 fps), and only if it's still too slow at 1× does it
+drop to `low` (drei `PerformanceMonitor`, started after load; when it keeps flip-flopping it
+just stops adapting).
 Portrait screens browse the rack itself as a carousel (no modal): the active jersey turns out
 facing front, tap it to flip it to its back, and ‹ › / swipe / tapping a neighbour steps to
 another one (front first). In the modal, a click on the jersey flips it; a drag still grabs.

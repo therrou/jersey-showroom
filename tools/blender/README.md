@@ -35,7 +35,8 @@ and `preview.render_views([...], out_dir)`.
 ## Knobs worth knowing
 
 - `garment.py`: `YOKE_*` (the hanger the shoulders rest on), `SLEEVE_FORWARD`,
-  `FOLD_DEPTH`, `BODY_DEPTH` (tube volume).
+  `FOLD_DEPTH`, `BODY_DEPTH` (tube volume), `ARMPIT_FLAT` (how collapsed the underarm
+  starts; too little and the tube holds a round puff there).
 - `drape.py`: `SLEEVE_HANG_DEG` (how far the sleeves swing down from the pattern's 55°),
   `SELF_RADIUS`/`SELF_EXCLUDE`.
 - `export.py`: cage spacings, `PIN_REACH` (cloth within this of the hanger is pinned in

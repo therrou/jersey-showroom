@@ -8,7 +8,7 @@ public/models/jersey_normal.webp / jersey_ao.webp (UV1 maps).
 Objects (glTF frame: +y up, front +z, origin at the top of the collar, metres):
   JerseyRender     ~24k tris  UV0 kit atlas, UV1 bake; _PATX/_PATY/_SIDE/_PART
   JerseyRenderLow  ~6k tris   same, coarser tube (same collar band + facings)
-    (+ morph targets drape1..N: the rack's drape variants, see variants.py)
+    (+ morph targets drape1..N on the render meshes and cages: drape variants, variants.py)
   JerseyCage       ~2.5k verts  welded tube on the same drape; _PATX/_PATY/_SIDE/_PIN
   JerseyCageLow    ~1.2k verts
 _SIDE: 0 front, 1 back, 2 seam.  _PART: 0 body, 1 collar band, 2 rib facing.
@@ -193,7 +193,8 @@ def run():
     morphs = bool(drapes)
     report = {}
     if morphs:
-        for o in (render, render_low):
+        # the render meshes (rack) and the cages (the modal's cloth starts in the same drape)
+        for o in (render, render_low, cage, cage_low):
             report[o.name + " morph max"] = variants.add_shape_keys(o, drapes)
     for o in (render, render_low, cage, cage_low):
         report[o.name] = (len(o.data.vertices), sum(len(p.vertices) - 2 for p in o.data.polygons))
