@@ -55,21 +55,49 @@ export const physics = {
     releaseDamping: 9,
     /** Front↔back volume links pulling back to the rest depth (higher = softer). */
     volumeCompliance: 1.2e-2,
+    /** Fabric stretch (0 = inextensible), post-release window (s), speed cap (m/s), grab
+     *  falloff toward the patch edge (higher = tighter pinch). */
+    stretchCompliance: 2e-8,
+    releaseTime: 0.5,
+    maxSpeed: 2.5,
+    grabFalloff: 2,
   },
 }
 
 export type PhysicsConfig = typeof physics
 
-type ModalFeel = Pick<
-  typeof physics.modal,
-  'grabStrength' | 'grabRadius' | 'grabMaxPull' | 'damping' | 'releaseDamping' | 'volumeCompliance' | 'bendCompliance' | 'aero'
->
+/** Every knob that shapes how the modal jersey grabs, moves and settles. */
+export const FEEL_KEYS = [
+  'grabStrength',
+  'grabRadius',
+  'grabMaxPull',
+  'grabFalloff',
+  'damping',
+  'releaseDamping',
+  'releaseTime',
+  'maxSpeed',
+  'aero',
+  'bendCompliance',
+  'stretchCompliance',
+  'volumeCompliance',
+  'swingDamping',
+] as const
+type ModalFeel = Pick<typeof physics.modal, (typeof FEEL_KEYS)[number]>
 
 /** How the modal cloth feels to grab and drop (?tune → cloth feel). */
 export const CLOTH_FEEL: Record<string, ModalFeel> = {
-  'heavy knit': { grabStrength: 0.1, grabRadius: 0.06, grabMaxPull: 0.09, damping: 3.6, releaseDamping: 12, volumeCompliance: 2e-2, bendCompliance: 1.6e-3, aero: 3.2 },
-  default: { grabStrength: 0.14, grabRadius: 0.05, grabMaxPull: 0.12, damping: 2.4, releaseDamping: 9, volumeCompliance: 1.2e-2, bendCompliance: 1e-3, aero: 2.4 },
-  'light jersey': { grabStrength: 0.22, grabRadius: 0.045, grabMaxPull: 0.18, damping: 1.4, releaseDamping: 6, volumeCompliance: 6e-3, bendCompliance: 6e-4, aero: 1.6 },
+  'heavy knit': {
+    grabStrength: 0.1, grabRadius: 0.06, grabMaxPull: 0.09, grabFalloff: 1.6, damping: 3.6, releaseDamping: 12,
+    releaseTime: 0.7, maxSpeed: 1.8, aero: 3.2, bendCompliance: 1.6e-3, stretchCompliance: 2e-8, volumeCompliance: 2e-2, swingDamping: 6,
+  },
+  default: {
+    grabStrength: 0.14, grabRadius: 0.05, grabMaxPull: 0.12, grabFalloff: 2, damping: 2.4, releaseDamping: 9,
+    releaseTime: 0.5, maxSpeed: 2.5, aero: 2.4, bendCompliance: 1e-3, stretchCompliance: 2e-8, volumeCompliance: 1.2e-2, swingDamping: 4.5,
+  },
+  'light jersey': {
+    grabStrength: 0.22, grabRadius: 0.045, grabMaxPull: 0.18, grabFalloff: 2.4, damping: 1.4, releaseDamping: 6,
+    releaseTime: 0.35, maxSpeed: 3.2, aero: 1.6, bendCompliance: 6e-4, stretchCompliance: 2e-8, volumeCompliance: 6e-3, swingDamping: 3.5,
+  },
 }
 
 /** Scales a "strength" (gain, acceleration) by the master dial. */

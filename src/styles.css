@@ -46,15 +46,13 @@ body {
   position: absolute;
   top: 0; left: 0; right: 0;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   padding: 20px 28px;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.chrome__top a { color: var(--ink-dim); text-decoration: none; transition: color 150ms; }
-@media (hover: hover) { .chrome__top a:hover { color: var(--ink); } }
 
 .logo {
   font-family: var(--serif);
@@ -96,7 +94,6 @@ body {
 .pill:active { transform: scale(0.97); }
 @media (hover: hover) { .pill:hover { border-color: var(--ink); } }
 
-.chrome__cta { position: absolute; left: 50%; bottom: 64px; translate: -50% 0; }
 
 .ticker {
   position: absolute;
@@ -122,7 +119,8 @@ body {
 /* modal */
 .modal { position: absolute; inset: 0; z-index: 10; }
 .modal[data-active='false'] { pointer-events: none; visibility: hidden; }
-.modal__stage { position: absolute; inset: 0; }
+.modal__stage { position: absolute; inset: 0; transition: opacity 140ms linear; }
+.modal__stage[data-leaving='true'] { opacity: 0; }
 .modal__ui { position: absolute; inset: 0; pointer-events: none; }
 .modal__ui button { pointer-events: auto; }
 .modal__stage canvas { touch-action: none; }
@@ -161,8 +159,6 @@ body {
 .modal__counter { font: 500 10px/1 var(--sans); letter-spacing: 0.14em; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
 .modal__title { margin: 0; font: italic 400 32px/1.1 var(--serif); text-align: center; }
 .modal__actions { display: flex; gap: 8px; margin-top: 4px; }
-.pill--solid { background: var(--rink); border-color: var(--rink); color: #06121c; }
-@media (hover: hover) { .pill--solid:hover { background: #5cc4ff; border-color: #5cc4ff; } }
 
 .modal__hint {
   position: absolute; top: 22px; left: 0; right: 0; margin: 0;

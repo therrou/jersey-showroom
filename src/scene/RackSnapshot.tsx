@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
-import { addAfterEffect, useThree } from '@react-three/fiber'
+import { useEffect, useRef } from 'react'
+import { addAfterEffect, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { create } from 'zustand'
+import { handoff } from '../state/handoff'
 import { useRack, type ScreenPose } from '../state/store'
 import { hangerX, hangerYaw } from './RackHover'
 import { RAIL_Y } from './rackLayout'
@@ -42,12 +43,33 @@ function blurredCopy(source: HTMLCanvasElement, cssW: number, cssH: number) {
  *            once the modal hides the rack's copy, grab the next rendered frame,
  *            blur it once, and hand over (the rack then stops rendering)
  *  closing → render one frame so the rack shows the right jersey hidden for the put-back
+ *  closed  → once a frame with the jersey back on the rail has been drawn, tell the
+ *            modal it can let its copy go (src/state/handoff.ts)
  */
 export function RackSnapshot() {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const size = useThree((s) => s.size)
   const gl = useThree((s) => s.gl)
   const invalidate = useThree((s) => s.invalidate)
+
+  // frames rendered by this canvas since the jersey came back (-1 = not counting)
+  const sinceBack = useRef(-1)
+  useEffect(
+    () =>
+      useRack.subscribe((s, prev) => {
+        if (s.phase === 'closed' && prev.phase !== 'closed') sinceBack.current = 0
+      }),
+    [],
+  )
+  useFrame(() => {
+    // this callback runs before each render: on the second one since 'closed', a frame
+    // with the jersey visible has already reached the screen
+    if (sinceBack.current < 0) return
+    if (++sinceBack.current >= 2) {
+      sinceBack.current = -1
+      handoff.rackDrawn()
+    }
+  })
 
   useEffect(() => {
     rackCamera = camera

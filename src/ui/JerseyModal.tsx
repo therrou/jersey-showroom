@@ -4,12 +4,15 @@ import { AnimatePresence, motion, type Variants } from 'motion/react'
 import * as THREE from 'three'
 import { JERSEYS } from '../data/jerseys'
 import { modalKitWidth } from '../cloth/ClothJersey'
-import { HANDOFF_MS, ModalScene } from '../cloth/ModalScene'
+import { ModalScene } from '../cloth/ModalScene'
+import { handoff } from '../state/handoff'
 import { jerseyKit } from '../jersey/assets'
 import { useBackdrop } from '../scene/RackSnapshot'
 import { useRack } from '../state/store'
 
 const EASE = [0.23, 1, 0.32, 1] as const
+/** How long the modal copy takes to dissolve into the rack's once both are on screen. */
+const HANDOFF_FADE_MS = 140
 
 /** Blurred still of the rack (captured once by RackSnapshot) — a cheap, compositor-only fade. */
 function Backdrop() {
@@ -97,9 +100,6 @@ function ModalUI() {
           <button className="pill" type="button" onClick={() => useRack.getState().toggleFlip()}>
             {flipped ? 'View front' : 'View back'}
           </button>
-          <button className="pill pill--solid" type="button">
-            See availability · {jersey.price}
-          </button>
         </motion.div>
       </div>
 
@@ -159,22 +159,32 @@ export function JerseyModal() {
     return () => window.removeEventListener('keydown', onKey)
   }, [phase])
 
-  // stay up (and rendering) a moment after closing, until the rack has redrawn the jersey
-  // under it, so the put-back never shows a frame without either copy
+  // Put-back hand-off: stay up (and rendering) after closing until the rack has drawn
+  // its copy under ours, then fade ours out briefly — the swap happens under matching
+  // pixels, never a frame with neither copy and never two copies apart.
   const [active, setActive] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   useEffect(() => {
     if (phase !== 'closed') {
       setActive(true)
+      setLeaving(false)
       return
     }
-    const t = window.setTimeout(() => setActive(false), HANDOFF_MS)
-    return () => window.clearTimeout(t)
+    let t = 0
+    const cancel = handoff.whenRackDrawn(() => {
+      setLeaving(true)
+      t = window.setTimeout(() => setActive(false), HANDOFF_FADE_MS)
+    })
+    return () => {
+      cancel()
+      window.clearTimeout(t)
+    }
   }, [phase])
   return (
     <>
       <Backdrop />
       <div className="modal" data-active={active} role="dialog" aria-modal="true" aria-hidden={!active}>
-        <div className="modal__stage">
+        <div className="modal__stage" data-leaving={leaving}>
           {/* always mounted: no context creation or shader compile on open */}
           <Canvas
             frameloop={active ? 'always' : 'never'}

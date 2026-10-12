@@ -20,8 +20,8 @@ const LIFT_GLIDE = { stiffness: 42, maxAccel: 14 }
 const CLOSE_MS = 760
 /** The put-back path is scripted; the hanger just tracks it tightly. */
 const PUT_BACK_TRACK = { stiffness: 900, maxAccel: 60 }
-/** After landing, the modal copy stays on top until the rack has redrawn its own. */
-export const HANDOFF_MS = 150
+/** Drop the landed jersey once the modal has handed off to the rack and faded. */
+const CLEAR_AFTER_MS = 600
 /** Carousel: the old jersey is gone before the next one starts to appear. */
 const STEP_OUT = 0.26
 const STEP_GAP = 0.04
@@ -185,7 +185,7 @@ export function ModalScene() {
           return [active]
         })
       }
-      if (s.phase === 'closed' && prev.phase !== 'closed') window.setTimeout(() => setEntries([]), HANDOFF_MS)
+      if (s.phase === 'closed' && prev.phase !== 'closed') window.setTimeout(() => setEntries([]), CLEAR_AFTER_MS)
     })
   }, [camera, size])
 

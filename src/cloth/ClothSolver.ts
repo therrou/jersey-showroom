@@ -38,6 +38,14 @@ export interface ClothConfig {
   /** Front↔back volume links: compliance pulling back toward the rest depth (higher =
    *  softer, less jelly); they always hold a minimum separation. */
   volumeCompliance: number
+  /** Fabric stretch compliance (0 = inextensible). */
+  stretchCompliance: number
+  /** Seconds the post-release damping lasts, fading out. */
+  releaseTime: number
+  /** Particle speed cap (m/s), so a fling never turns into a whip. */
+  maxSpeed: number
+  /** How the grab fades toward the patch edge (1 = linear, higher = tighter pinch). */
+  grabFalloff: number
 }
 
 export interface ClothTarget {
@@ -61,9 +69,6 @@ export interface ClothInput {
 
 const GRAVITY = -9.81
 const MASS = 0.42 // kg, a replica jersey
-const STRETCH_COMPLIANCE = 2e-8
-const RELEASE_TIME = 0.5 // s of extra damping after letting go
-const MAX_SPEED = 2.5 // m/s, so a fling never turns into a whip
 // Rest-shape drape: the flat pattern gets soft vertical folds that deepen toward the
 // hem (same profile as the rack shader), and the hem gathers in slightly. Bending
 // constraints remember this shape, so folds re-form after the fabric is pulled.
@@ -121,6 +126,7 @@ export class ClothSolver {
   grabId = -1
   time = 0
   releaseT = 0
+  releaseTotal = 1
   private scratch = new Float32Array(3)
 
   constructor(init: ClothInit) {
@@ -266,9 +272,12 @@ export class ClothSolver {
     out[offset + 6] = qw
   }
 
-  private updateGrab(grab: ClothInput['grab'], radius: number) {
+  private updateGrab(grab: ClothInput['grab'], radius: number, falloff: number, releaseTime: number) {
     if (!grab) {
-      if (this.grabId >= 0) this.releaseT = RELEASE_TIME
+      if (this.grabId >= 0) {
+        this.releaseT = releaseTime
+        this.releaseTotal = releaseTime
+      }
       this.grabSet = []
       this.grabId = -1
       return
@@ -283,7 +292,7 @@ export class ClothSolver {
       if (this.invMass[i] === 0) continue
       const dx = p[i * 3] - p[c], dy = p[i * 3 + 1] - p[c + 1], dz = p[i * 3 + 2] - p[c + 2]
       const d = Math.hypot(dx, dy, dz)
-      if (d < radius) this.grabSet.push({ i, w: (1 - d / radius) ** 2, ox: dx, oy: dy, oz: dz })
+      if (d < radius) this.grabSet.push({ i, w: (1 - d / radius) ** falloff, ox: dx, oy: dy, oz: dz })
     }
   }
 
@@ -367,7 +376,7 @@ export class ClothSolver {
     const h2 = h * h
     const p = this.pos, prev = this.prev, v = this.vel, w = this.invMass
     const cfg = input.cfg
-    this.updateGrab(input.grab, cfg.grabRadius)
+    this.updateGrab(input.grab, cfg.grabRadius, cfg.grabFalloff, cfg.releaseTime)
     // the grab target can't drag fabric further than grabMaxPull from where it hangs
     let gx = 0, gy = 0, gz = 0
     if (input.grab) {
@@ -384,7 +393,7 @@ export class ClothSolver {
 
     for (let s = 0; s < steps; s++) {
       this.time += h
-      const settle = this.releaseT > 0 ? cfg.releaseDamping * (this.releaseT / RELEASE_TIME) : 0
+      const settle = this.releaseT > 0 ? cfg.releaseDamping * (this.releaseT / this.releaseTotal) : 0
       this.releaseT = Math.max(0, this.releaseT - h)
       const damp = Math.max(0, 1 - (cfg.damping + settle) * h)
       this.stepHanger(h, input.target, input.cfg)
@@ -417,12 +426,12 @@ export class ClothSolver {
         }
       }
 
-      this.solveDistance(this.edges, this.edgeLen, STRETCH_COMPLIANCE, h2)
+      this.solveDistance(this.edges, this.edgeLen, cfg.stretchCompliance, h2)
       this.solveDistance(this.bends, this.bendLen, input.cfg.bendCompliance, h2)
       this.solveDistance(this.thick, this.thickLen, cfg.volumeCompliance, h2, 0.25)
 
       const inv = 1 / h
-      const vmax2 = MAX_SPEED * MAX_SPEED
+      const vmax2 = cfg.maxSpeed * cfg.maxSpeed
       for (let i = 0; i < this.n; i++) {
         if (w[i] === 0) continue
         const j = i * 3
@@ -431,7 +440,7 @@ export class ClothSolver {
         let vz = (p[j + 2] - prev[j + 2]) * inv
         const s2 = vx * vx + vy * vy + vz * vz
         if (s2 > vmax2) {
-          const k = MAX_SPEED / Math.sqrt(s2)
+          const k = cfg.maxSpeed / Math.sqrt(s2)
           vx *= k; vy *= k; vz *= k
         }
         v[j] = vx

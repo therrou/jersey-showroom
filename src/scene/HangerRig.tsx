@@ -164,6 +164,45 @@ export function HangerRig({ index, homeX }: Props) {
     twist: 0,
     twistV: 0,
   })
+  // Put-back: the moment the modal starts carrying this jersey home, its (hidden) rack
+  // copy is placed exactly where it will end up — in its turned-out slot, facing, at rest,
+  // fake-cloth motion cleared — so the flight has a fixed target and nothing is still
+  // sliding or turning when the two copies swap.
+  useEffect(
+    () =>
+      useRack.subscribe((s, prev) => {
+        if (s.phase !== 'closing' || prev.phase === 'closing' || s.open !== index) return
+        const t = trolley.current
+        const h = hanger.current
+        if (!t || !h) return
+        const x = slotPositions(JERSEYS.length, index)[index]
+        const zero = { x: 0, y: 0, z: 0 }
+        t.setTranslation({ x, y: RAIL_Y, z: 0 }, true)
+        t.setLinvel(zero, true)
+        h.setTranslation({ x, y: RAIL_Y, z: 0 }, true)
+        h.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
+        h.setLinvel(zero, true)
+        h.setAngvel(zero, true)
+        target.current.x = x
+        target.current.yaw = 0
+        target.current.hovered = true
+        const st = sim.current
+        st.prevV.set(0, 0, 0)
+        st.prevWy = 0
+        st.lag.set(0, 0, 0)
+        st.lagV.set(0, 0, 0)
+        st.twist = st.twistV = 0
+        uniforms.uLag.value.set(0, 0, 0)
+        uniforms.uTwist.value = 0
+        uniforms.uRipple.value = 0
+        uniforms.uFlare.value = 0
+        // publish the final pose now, so the modal aims at it from the first frame
+        hangerX[index] = x
+        hangerYaw[index] = 0
+      }),
+    [index, uniforms],
+  )
+
   useFrame((_, rawDelta) => {
     const h = hanger.current
     if (!h) return

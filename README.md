@@ -57,9 +57,11 @@ Closing flies the jersey back to its slot. ←/→ cross-dissolve: the old jerse
 fades, the next rises from below and fades in. Kits for the hovered jersey and the open
 jersey's neighbours are painted ahead of time.
 
-**Modal cloth feel** — `physics.modal` (and `?tune`): `grabStrength` / `grabRadius` /
-`grabMaxPull` (how hard and how far a grab pulls), `damping` + `releaseDamping` (calm after
-letting go), `volumeCompliance` (how springy the tube's depth is).
+**Modal cloth feel** — `?tune` → *grab & drop*: presets (heavy knit / default / light
+jersey) and every knob that shapes the grab and the settle — grab strength / radius / max
+pull / falloff, damping, calm after drop (+ how long), speed cap, air drag, bend / stretch /
+volume softness, hanger swing damping. All live; **copy settings** puts the current values
+on the clipboard as JSON (defaults live in `src/config/physics.ts`, `CLOTH_FEEL`).
 
 `?fps` shows a frame-rate overlay (handy on a real phone with `pnpm dev --host`).
 
