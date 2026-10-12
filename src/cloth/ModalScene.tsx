@@ -24,6 +24,9 @@ const CLOSE_TURN_MS = 340
 const TURN_END = 0.82
 /** The put-back path is scripted; the hanger just tracks it tightly. */
 const PUT_BACK_TRACK = { stiffness: 900, maxAccel: 60 }
+/** Put-back: from this fraction of the flight the shown cloth blends into the rest drape,
+ *  reaching it exactly on landing, so the swap to the rack's static copy can't pop. */
+const REST_BLEND_FROM = 0.25
 /** Drop the landed jersey once the modal has handed off to the rack and faded. */
 const CLEAR_AFTER_MS = 600
 /** Carousel: the old jersey is gone before the next one starts to appear. */
@@ -237,6 +240,7 @@ export function ModalScene() {
         yaw: lerp(pb.from.yaw, pbTo.yaw, ease(Math.min(1, t / TURN_END))),
         glide: PUT_BACK_TRACK,
         calm: true,
+        rest: ease(Math.max(0, (t - REST_BLEND_FROM) / (1 - REST_BLEND_FROM))),
       }
       if (t >= 1) {
         putBack.current = null

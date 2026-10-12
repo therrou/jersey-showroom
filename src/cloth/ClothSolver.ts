@@ -75,6 +75,9 @@ export interface ClothTarget {
   glide?: { stiffness: number; maxAccel: number }
   /** A scripted move (the put-back): barely swing while it's being carried. */
   calm?: boolean
+  /** Display blend (0–1) from the simulated cloth to the rest drape hanging still at this
+   *  target: the put-back lands exactly on the rack's static copy. Physics is unaffected. */
+  rest?: number
 }
 
 export interface ClothInput {
@@ -508,6 +511,19 @@ export class ClothSolver {
     for (let k = 0; k < 4; k++) q[k] = this.tq2[k]
     qToMatrix(q, R)
     for (const i of this.pins) this.toWorld(i, p)
+  }
+
+  /** Rest drape hanging still (no swing) at a target pose, written into `out` (xyz per particle). */
+  restAt(t: ClothTarget, out: Float32Array) {
+    const c = Math.cos(t.yaw), sn = Math.sin(t.yaw), r = this.rest
+    for (let i = 0; i < this.n; i++) {
+      const j = i * 3
+      const x = r[j], y = r[j + 1] - this.drop, z = r[j + 2]
+      // R_y(yaw)
+      out[j] = t.x + c * x + sn * z
+      out[j + 1] = t.y + y
+      out[j + 2] = t.z - sn * x + c * z
+    }
   }
 
   /** Hanger transform for rendering: pivot + quaternion. */

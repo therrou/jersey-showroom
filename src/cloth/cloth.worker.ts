@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { ClothSolver, type ClothConfig, type ClothInit, type ClothInput } from './ClothSolver'
+import { ClothSolver, type ClothConfig, type ClothInit, type ClothInput, type ClothTarget } from './ClothSolver'
 
 export type WorkerIn =
   | { type: 'init'; init: ClothInit; cfg: ClothConfig; settleSteps: number }
@@ -23,19 +23,22 @@ const prevPose = new Float32Array(8)
 const curPose = new Float32Array(8)
 /** The last frame posted already shows the sleeping cloth exactly. */
 let shownAsleep = false
+let shownBlend = 0
+let restBuf = new Float32Array(0)
 
 self.onmessage = (e: MessageEvent<WorkerIn>) => {
   const msg = e.data
   if (msg.type === 'init') {
     solver = new ClothSolver(msg.init)
-    // let it hang and settle at the spawn pose before the first frame is shown
+    // optional pre-settle at the spawn pose (the modal starts from the rest drape: 0 steps)
     const still = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 1, on: false }
     solver.settle(msg.settleSteps, { dt: FIXED, cfg: msg.cfg, target: msg.init.start, wind: still, grab: null })
     prevPos = new Float32Array(solver.pos)
+    restBuf = new Float32Array(solver.n * 3)
     pose(solver, prevPose)
     acc = 0
     shownAsleep = false
-    post(new Float32Array(solver.n * 3), 1)
+    post(new Float32Array(solver.n * 3), 1, msg.init.start)
     return
   }
   if (!solver) return
@@ -50,14 +53,15 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
     steps++
   }
   if (acc >= FIXED) acc %= FIXED
+  const blend = msg.input.target.rest ?? 0
   if (s.asleep) {
     // nothing moves: show the resting pose once, then stay quiet
-    if (shownAsleep) return reply({ type: 'idle', buffer: msg.buffer }, msg.buffer)
+    if (shownAsleep && blend === shownBlend) return reply({ type: 'idle', buffer: msg.buffer }, msg.buffer)
     prevPos.set(s.pos)
     pose(s, prevPose)
     shownAsleep = true
   } else shownAsleep = false
-  post(msg.buffer.length === s.n * 3 ? msg.buffer : new Float32Array(s.n * 3), acc / FIXED)
+  post(msg.buffer.length === s.n * 3 ? msg.buffer : new Float32Array(s.n * 3), acc / FIXED, msg.input.target)
 }
 
 function pose(s: ClothSolver, out: Float32Array) {
@@ -65,8 +69,11 @@ function pose(s: ClothSolver, out: Float32Array) {
   out[7] = s.yaw // unwrapped, so a put-back can continue from it
 }
 
-/** Post positions and pose interpolated between the previous and the current step. */
-function post(buffer: Float32Array, alpha: number) {
+/**
+ * Post positions and pose interpolated between the previous and the current step, then
+ * blended toward the still rest drape at the target by `target.rest`.
+ */
+function post(buffer: Float32Array, alpha: number, target: ClothTarget) {
   const s = solver!
   const cur = s.pos
   const a = alpha, b = 1 - alpha
@@ -85,6 +92,27 @@ function post(buffer: Float32Array, alpha: number) {
   len = Math.sqrt(len) || 1
   for (let k = 3; k < 7; k++) out[k] /= len
   out[7] = prevPose[7] * b + curPose[7] * a
+
+  const w = Math.min(1, Math.max(0, target.rest ?? 0))
+  shownBlend = target.rest ?? 0
+  if (w > 0) {
+    s.restAt(target, restBuf)
+    const v = 1 - w
+    for (let i = 0; i < buffer.length; i++) buffer[i] = buffer[i] * v + restBuf[i] * w
+    out[0] = out[0] * v + target.x * w
+    out[1] = out[1] * v + target.y * w
+    out[2] = out[2] * v + target.z * w
+    // the hanger straightens and turns to the target yaw (nlerp toward R_y(yaw))
+    const ty = Math.sin(target.yaw / 2), tw = Math.cos(target.yaw / 2)
+    const sgn = out[4] * ty + out[6] * tw < 0 ? -1 : 1
+    out[3] *= v
+    out[4] = out[4] * v + ty * w * sgn
+    out[5] *= v
+    out[6] = out[6] * v + tw * w * sgn
+    const l = Math.hypot(out[3], out[4], out[5], out[6]) || 1
+    for (let k = 3; k < 7; k++) out[k] /= l
+    out[7] = out[7] * v + target.yaw * w
+  }
   reply({ type: 'frame', positions: buffer, pose: out }, buffer)
 }
 

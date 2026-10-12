@@ -103,7 +103,9 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
         start,
       },
       cfg: physics.modal,
-      settleSteps: 90,
+      // no hidden pre-settle: the cloth starts as the rest drape (exactly the rack's copy)
+      // and relaxes into its simulated hang while it lifts off
+      settleSteps: 0,
     } satisfies WorkerIn)
     return () => worker.terminate()
     // `start` is the spawn pose only; later moves go through `target`
