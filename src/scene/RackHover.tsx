@@ -16,7 +16,7 @@ export const rackView = { portrait: false, pan: 0, panLimit: 0, dragging: false,
 const TOP = RAIL_Y + 0.05
 const BOTTOM = RAIL_Y - JERSEY_DROP - 0.86
 /** Half-width the turned jersey keeps the hover for (its torso), vs. a side-on slot. */
-const HOLD = 0.34
+const HOLD = 0.3
 const CATCH = SLOT_SIDE * 0.6
 
 /** The jersey under rail position (x, y), with the turned-out one holding its width. */

@@ -28,7 +28,7 @@ interface Props {
   index: number
   start: ClothTarget
   target: RefObject<ClothTarget>
-  fade: { value: number }
+  fade: { value: number; to?: number }
   interactive: boolean
   onReady?: () => void
 }
@@ -63,6 +63,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
   const prepass = useMemo(() => new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), [])
 
   const hangerRef = useRef<THREE.Group>(null)
+  const meshRef = useRef<THREE.Mesh>(null)
   const [ready, setReady] = useState(false)
   const io = useRef({
     worker: null as Worker | null,
@@ -107,6 +108,14 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
   }, [source, grid.substeps])
 
   useFrame((_, dt) => {
+    // Shadows can't fade: a jersey on its way out stops casting at once (it must not
+    // darken the next one); one arriving casts from the start, so its self-shadowing
+    // fades in with it instead of popping on halfway.
+    const casting = (fade.to ?? 1) > 0.5
+    if (meshRef.current && meshRef.current.castShadow !== casting) {
+      meshRef.current.castShadow = casting
+      hangerRef.current?.traverse((o) => ((o as THREE.Mesh).castShadow = casting))
+    }
     const s = io.current
     const frame = s.latest
     if (frame) {
@@ -197,6 +206,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady }
   return (
     <>
       <mesh
+        ref={meshRef}
         geometry={geometry}
         material={material}
         customDepthMaterial={depthMaterial}

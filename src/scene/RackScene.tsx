@@ -97,7 +97,7 @@ export function RackScene() {
       <RackHover />
       <Room />
       <Suspense fallback={null}>
-        <Physics timeStep={1 / 120} interpolate gravity={[0, -9.81, 0]} numSolverIterations={8} paused={phase !== 'closed'}>
+        <Physics timeStep={1 / 120} interpolate gravity={[0, -9.81, 0]} numSolverIterations={8} paused={phase === 'open' || phase === 'opening'}>
           {JERSEYS.map((j, i) => (
             <HangerRig key={j.code} index={i} homeX={HOME[i]} />
           ))}

@@ -13,7 +13,8 @@ export function App() {
   const dpr = useRack((s) => s.dpr)
   // While the modal is up the rack only renders on demand (one frame for the put-back);
   // the blurred backdrop is a still, so the GPU is free for the cloth.
-  const frameloop = phase === 'closed' || phase === 'opening' ? 'always' : 'demand'
+  // the rack also runs while closing: it rearranges live under the fading backdrop
+  const frameloop = phase === 'open' ? 'demand' : 'always'
   return (
     <main className="app">
       <div className="rack">

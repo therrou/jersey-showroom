@@ -8,7 +8,7 @@ export const physics = {
 
   rack: {
     /** Rail slide spring (N/m) and damping ratio. Lower stiffness = lazier slide = less swing. */
-    slideStiffness: 26,
+    slideStiffness: 18,
     slideDamping: 1.05,
     /** Hook yaw spring when turning to face (N·m/rad) and damping ratio. */
     turnStiffness: 0.55,
@@ -43,22 +43,34 @@ export const physics = {
     /** Pointer breeze strength. */
     wind: 0.7,
     /** Fabric: lower bend compliance = stiffer, crisper folds. */
-    bendCompliance: 6e-4,
-    aero: 1.4,
+    bendCompliance: 1e-3,
+    aero: 2.4,
     /** Grab-and-pull: pull per substep (0–1), soft patch radius (m), max pull from where
      *  the fabric hangs (m). Lower = heavier, calmer fabric. */
-    grabStrength: 0.2,
+    grabStrength: 0.14,
     grabRadius: 0.05,
-    grabMaxPull: 0.14,
+    grabMaxPull: 0.12,
     /** Velocity damping (1/s), plus extra for half a second after letting go. */
-    damping: 1.1,
-    releaseDamping: 5,
+    damping: 2.4,
+    releaseDamping: 9,
     /** Front↔back volume links pulling back to the rest depth (higher = softer). */
-    volumeCompliance: 4e-3,
+    volumeCompliance: 1.2e-2,
   },
 }
 
 export type PhysicsConfig = typeof physics
+
+type ModalFeel = Pick<
+  typeof physics.modal,
+  'grabStrength' | 'grabRadius' | 'grabMaxPull' | 'damping' | 'releaseDamping' | 'volumeCompliance' | 'bendCompliance' | 'aero'
+>
+
+/** How the modal cloth feels to grab and drop (?tune → cloth feel). */
+export const CLOTH_FEEL: Record<string, ModalFeel> = {
+  'heavy knit': { grabStrength: 0.1, grabRadius: 0.06, grabMaxPull: 0.09, damping: 3.6, releaseDamping: 12, volumeCompliance: 2e-2, bendCompliance: 1.6e-3, aero: 3.2 },
+  default: { grabStrength: 0.14, grabRadius: 0.05, grabMaxPull: 0.12, damping: 2.4, releaseDamping: 9, volumeCompliance: 1.2e-2, bendCompliance: 1e-3, aero: 2.4 },
+  'light jersey': { grabStrength: 0.22, grabRadius: 0.045, grabMaxPull: 0.18, damping: 1.4, releaseDamping: 6, volumeCompliance: 6e-3, bendCompliance: 6e-4, aero: 1.6 },
+}
 
 /** Scales a "strength" (gain, acceleration) by the master dial. */
 export const m = (v: number) => v * physics.motion

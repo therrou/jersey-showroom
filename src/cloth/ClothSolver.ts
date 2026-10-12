@@ -47,6 +47,8 @@ export interface ClothTarget {
   yaw: number
   /** Override the glide for this move (lift-off / put-back are quicker than a carousel step). */
   glide?: { stiffness: number; maxAccel: number }
+  /** A scripted move (the put-back): barely swing while it's being carried. */
+  calm?: boolean
 }
 
 export interface ClothInput {
@@ -207,8 +209,10 @@ export class ClothSolver {
     // pendulum driven by the pivot's acceleration: when the hook accelerates along +x
     // the hem lags toward -x, i.e. a negative rotation about z (and likewise for z/x)
     const g = -GRAVITY / SWING_L
-    const azz = -g * Math.sin(this.swingZ) - cfg.swingDamping * this.swingZV - ax[0] / SWING_L
-    const axx = -g * Math.sin(this.swingX) - cfg.swingDamping * this.swingXV + ax[2] / SWING_L
+    const drive = t.calm ? 0.12 : 1
+    const sd = cfg.swingDamping * (t.calm ? 3 : 1)
+    const azz = -g * Math.sin(this.swingZ) - sd * this.swingZV - (ax[0] / SWING_L) * drive
+    const axx = -g * Math.sin(this.swingX) - sd * this.swingXV + (ax[2] / SWING_L) * drive
     this.swingZV += azz * h
     this.swingXV += axx * h
     this.swingZ = Math.max(-SWING_MAX, Math.min(SWING_MAX, this.swingZ + this.swingZV * h))

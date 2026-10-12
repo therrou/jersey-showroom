@@ -74,7 +74,9 @@ export const useRack = create<RackState>((set, get) => ({
     if (get().phase === 'opening') set({ phase: 'open', hovered: null })
   },
   close: () => {
-    if (get().phase === 'open' || get().phase === 'opening') set({ phase: 'closing' })
+    // the jersey being viewed goes back as the rack's turned-out one: the rack makes room
+    // for it while it's carried back, so it lands exactly where its rack copy will be
+    if (get().phase === 'open' || get().phase === 'opening') set({ phase: 'closing', hovered: get().open })
   },
   closed: () => set({ phase: 'closed', open: null, lifted: null, openFrom: null }),
   step: (dir) => {

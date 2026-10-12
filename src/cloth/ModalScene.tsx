@@ -17,7 +17,9 @@ const DRAG_YAW = 0.011 // rad per px when spinning the hanger by dragging the ba
 const CENTER: ClothTarget = { x: 0, y: 0, z: 0, yaw: 0 }
 /** Lift-off / put-back move faster than a carousel step. */
 const LIFT_GLIDE = { stiffness: 42, maxAccel: 14 }
-const CLOSE_MS = 700
+const CLOSE_MS = 760
+/** The put-back path is scripted; the hanger just tracks it tightly. */
+const PUT_BACK_TRACK = { stiffness: 900, maxAccel: 60 }
 /** After landing, the modal copy stays on top until the rack has redrawn its own. */
 export const HANDOFF_MS = 150
 /** Carousel: the old jersey is gone before the next one starts to appear. */
@@ -131,6 +133,7 @@ export function ModalScene() {
   const [entries, setEntries] = useState<Entry[]>([])
   const keyRef = useRef(0)
   const yaw = useRef({ base: 0, drag: 0 })
+  const putBack = useRef<{ entry: Entry; index: number; from: ClothTarget; t0: number } | null>(null)
 
   // Choreography, driven by the store's phase / open index.
   useEffect(() => {
@@ -171,17 +174,16 @@ export function ModalScene() {
           return [...list.slice(-1), next]
         })
       }
-      // close: fly back to the rack slot and fade out on arrival
+      // close: carried back to the rack slot along an eased path (exact duration and
+      // landing), then swapped out under the rack's own copy — no fade
       if (s.phase === 'closing' && prev.phase !== 'closing') {
         setEntries((list) => {
           const active = list[list.length - 1]
           if (!active) return list
-          const pose = s.open !== null ? rackScreenPose(s.open) : null
-          active.target.current = pose ? { ...fromScreen(pose, camera, size.height), glide: LIFT_GLIDE } : { ...CENTER, y: -0.3 }
-          // no fade: it lands on the rack copy's pixels and is swapped out under them
+          const from = { ...active.target.current }
+          putBack.current = { entry: active, index: s.open ?? -1, from, t0: performance.now() }
           return [active]
         })
-        window.setTimeout(() => useRack.getState().closed(), CLOSE_MS)
       }
       if (s.phase === 'closed' && prev.phase !== 'closed') window.setTimeout(() => setEntries([]), HANDOFF_MS)
     })
@@ -207,6 +209,29 @@ export function ModalScene() {
 
   useFrame((_, dt) => {
     const phase = useRack.getState().phase
+    const pb = putBack.current
+    if (pb) {
+      // aim at the rack copy's live pose (the rack is making room for it as we fly)
+      const pose = pb.index >= 0 ? rackScreenPose(pb.index) : null
+      const to = pose ? fromScreen(pose, camera, size.height) : { ...CENTER, y: -0.3 }
+      to.yaw = pb.from.yaw + Math.atan2(Math.sin(to.yaw - pb.from.yaw), Math.cos(to.yaw - pb.from.yaw)) // short way round
+      const pbTo = to
+      const t = Math.min(1, (performance.now() - pb.t0) / CLOSE_MS)
+      const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2 // ease in-out cubic
+      const lerp = (a: number, b: number) => a + (b - a) * e
+      pb.entry.target.current = {
+        x: lerp(pb.from.x, pbTo.x),
+        y: lerp(pb.from.y, pbTo.y),
+        z: lerp(pb.from.z, pbTo.z),
+        yaw: lerp(pb.from.yaw, pbTo.yaw),
+        glide: PUT_BACK_TRACK,
+        calm: true,
+      }
+      if (t >= 1) {
+        putBack.current = null
+        useRack.getState().closed()
+      }
+    }
     entries.forEach((e, i) => {
       const f = e.fade
       if (f.delay > 0) f.delay -= dt

@@ -6,7 +6,7 @@ export const RAIL_LENGTH = 2.85
 export const JERSEY_DROP = 0.13
 /** Rail space taken by a jersey hanging side-on vs turned to face the viewer. */
 export const SLOT_SIDE = 0.165
-export const SLOT_FACE = 1.12
+export const SLOT_FACE = 0.82
 /** Side-on yaw: the jersey's front points along +x. */
 export const SIDE_YAW = Math.PI / 2
 
