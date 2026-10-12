@@ -1,0 +1,63 @@
+# Kit Room — hockey jersey rack POC
+
+React Three Fiber recreation of a "garments on a rail" product browser, with national-team
+hockey jerseys (IIHF top 10, inspired-by kits) and physics as the point.
+
+```bash
+pnpm install
+pnpm dev        # http://localhost:5173
+pnpm build
+```
+
+Open with `?tune` for a live physics panel (master **motion** dial + per-system knobs);
+defaults live in `src/config/physics.ts`.
+
+## How it works
+
+**Rack (hybrid physics, Rapier @ 120 Hz)**
+- Each jersey = a *trolley* body locked to the rail's x axis + a *hanger* body on a spherical
+  joint (free swing and yaw). Trolleys are spring-pulled to layout slots; a torsional spring
+  at the hook turns the hovered jersey to face you (`src/scene/HangerRig.tsx`).
+- Jerseys collide with each other. The cursor is a *brush*: when it's inside a jersey's
+  fabric it applies a capped contact impulse at that point from its velocity relative to the
+  cloth, so sweeps set jerseys swinging and twisting without ever launching them.
+- Fabric motion on the rack is faked in a vertex shader driven by the hanger's measured
+  motion: hem inertia lag, trailing twist on turns, sleeve flare, speed ripples, static drape
+  folds (`src/jersey/fabricMaterial.ts`).
+- Hover is picked by rail position (nearest hanger, turned-out one holds its width) rather than
+  raycasting slivers, so it never flickers (`src/scene/RackHover.tsx`).
+
+**Modal (real cloth, Web Worker)**
+- XPBD cloth, "small steps" (12 substeps × 1 pass desktop, 8 on phones): stretch/shear,
+  bending across every interior edge (remembering a drape-folded rest shape), front↔back volume constraints, per-triangle aerodynamic drag, pinned to a
+  simulated hanger (critically damped pivot glide + pendulum swing + yaw spring)
+  (`src/cloth/ClothSolver.ts`).
+- Grab-and-pull a soft patch of fabric; drag the background (or "View back" / `F`) to turn it.
+  Pointer movement near the jersey stirs a local wind field.
+
+**Jersey geometry** — `JerseyMesh` interface (`src/jersey/JerseyGeometry.ts`). Procedural:
+the flat pattern (rounded outline) is Delaunay-triangulated with evenly spaced edge points, then
+inflated into two fabric layers that meet in a rounded fold (not a pinched pillow seam); seam
+normals are merged so edges shade round. Per-vertex AO is baked for the armpits, the
+sleeve/body gap and the collar. A cleaned-up GLB can implement the same interface and drop in
+via `src/jersey/assets.ts`.
+
+**Kit art + material** — `src/jersey/jerseyTexture.ts` paints three aligned maps per jersey
+from `src/data/jerseys.ts`: colour, height (raised tackle-twill lettering with stitched edges,
+rib knit, perforated vent panels, seams) and roughness (glossier twill on matte knit).
+`src/jersey/fabricMaterial.ts` combines that bump with a tiled knit micro-relief, applies the
+baked AO, and adds sheen. Set `crestUrl` on a jersey to use official chest artwork.
+
+**Modal transition** — the jersey lifts off the rack: the rack publishes the jersey's screen
+pose, the cloth spawns at exactly those pixels and glides to centre; the rack captures one
+frame (with that jersey hidden), blurs it once into a still backdrop and stops rendering.
+Closing flies the jersey back to its slot. ←/→ cross-dissolve: the old jersey drifts up and
+fades, the next rises from below and fades in. Kits for the hovered jersey and the open
+jersey's neighbours are painted ahead of time.
+
+## Quality tiers
+Phones / coarse pointers / narrow screens start on `low` (smaller cloth grid, 1K/2K textures,
+no post-processing, plain floor). On desktop the render scale adapts first (1×–1.5×), and only
+if that isn't enough does it drop to `low` (drei `PerformanceMonitor`, started after load).
+Portrait screens frame part of the rail and pan by swipe; tap to turn a jersey out, tap again
+to open.

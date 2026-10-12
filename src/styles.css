@@ -1,0 +1,186 @@
+:root {
+  --bg: #15181c;
+  --ink: #eef2f6;
+  --ink-dim: rgba(238, 242, 246, 0.62);
+  --rink: #2fb2ff;
+  --line: rgba(238, 242, 246, 0.22);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans: 'Inter', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.app { position: fixed; inset: 0; }
+
+.rack { position: absolute; inset: 0; }
+.rack canvas { touch-action: none; }
+
+/* blurred still of the rack behind the modal: opacity + scale only, so it's compositor-cheap */
+.backdrop {
+  position: absolute; inset: 0; z-index: 5;
+  opacity: 0; pointer-events: none;
+  transform: scale(1);
+  transition: opacity 480ms var(--ease-out), transform 700ms var(--ease-out);
+  will-change: opacity, transform;
+}
+.backdrop[data-shown='true'] { opacity: 1; transform: scale(1.035); }
+.backdrop[data-shown='false'] { transition-delay: 260ms; }
+.backdrop__img { width: 100%; height: 100%; display: block; }
+
+/* page chrome */
+.chrome { position: absolute; inset: 0; pointer-events: none; transition: opacity 320ms var(--ease-out); }
+.chrome[data-hidden='true'] { opacity: 0; }
+.chrome a, .chrome button { pointer-events: auto; }
+
+.chrome__top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 28px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chrome__top a { color: var(--ink-dim); text-decoration: none; transition: color 150ms; }
+@media (hover: hover) { .chrome__top a:hover { color: var(--ink); } }
+
+.logo {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 30px;
+  line-height: 0.8;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.logo span { color: var(--rink); margin-left: 2px; }
+
+.caption {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 120px;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 22px;
+  min-height: 28px;
+}
+.caption span { display: inline-block; }
+
+.pill {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(21, 24, 28, 0.4);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font: 500 10px/1 var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), border-color 150ms, background 150ms;
+}
+.pill:active { transform: scale(0.97); }
+@media (hover: hover) { .pill:hover { border-color: var(--ink); } }
+
+.chrome__cta { position: absolute; left: 50%; bottom: 64px; translate: -50% 0; }
+
+.ticker {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 30px;
+  background: var(--rink);
+  color: #06121c;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.ticker__track {
+  display: flex;
+  white-space: nowrap;
+  animation: ticker 40s linear infinite;
+  font: italic 600 10px/1 var(--sans);
+  letter-spacing: 0.1em;
+}
+.ticker__track span { padding: 0 14px; }
+.ticker__track i { font-style: normal; margin-left: 28px; }
+@keyframes ticker { to { transform: translateX(-50%); } }
+
+/* modal */
+.modal { position: absolute; inset: 0; z-index: 10; }
+.modal[data-active='false'] { pointer-events: none; visibility: hidden; }
+.modal__stage { position: absolute; inset: 0; }
+.modal__ui { position: absolute; inset: 0; pointer-events: none; }
+.modal__ui button { pointer-events: auto; }
+.modal__stage canvas { touch-action: none; }
+.modal__close {
+  position: absolute; top: 18px; right: 24px;
+  background: none; border: 0; color: var(--ink-dim);
+  font: 500 11px/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; padding: 8px;
+  transition: color 150ms;
+}
+@media (hover: hover) { .modal__close:hover { color: var(--ink); } }
+
+.modal__arrow {
+  position: absolute; top: 46%;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1px solid var(--line);
+  background: rgba(21, 24, 28, 0.35);
+  backdrop-filter: blur(6px);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), border-color 150ms, background 150ms;
+}
+.modal__arrow svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.modal__arrow:active { transform: scale(0.94); }
+@media (hover: hover) { .modal__arrow:hover { border-color: var(--ink); background: rgba(47, 178, 255, 0.18); } }
+.modal__arrow--prev { left: max(16px, 18vw); }
+.modal__arrow--next { right: max(16px, 18vw); }
+
+.modal__info {
+  position: absolute; left: 0; right: 0; bottom: 36px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  pointer-events: none;
+}
+.modal__info button { pointer-events: auto; }
+.modal__counter { font: 500 10px/1 var(--sans); letter-spacing: 0.14em; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.modal__title { margin: 0; font: italic 400 32px/1.1 var(--serif); text-align: center; }
+.modal__actions { display: flex; gap: 8px; margin-top: 4px; }
+.pill--solid { background: var(--rink); border-color: var(--rink); color: #06121c; }
+@media (hover: hover) { .pill--solid:hover { background: #5cc4ff; border-color: #5cc4ff; } }
+
+.modal__hint {
+  position: absolute; top: 22px; left: 0; right: 0; margin: 0;
+  text-align: center; font: 400 11px/1 var(--sans); letter-spacing: 0.06em; color: var(--ink-dim);
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .chrome__top { padding: 14px 16px; }
+  .logo { font-size: 24px; }
+  .caption { bottom: 104px; font-size: 18px; }
+  .modal__arrow { top: auto; bottom: 150px; }
+  .modal__title { font-size: 24px; }
+  .modal__info { bottom: 24px; }
+  .modal__hint { top: 58px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker__track { animation: none; }
+  .rack { transition: none; }
+}

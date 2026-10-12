@@ -1,0 +1,90 @@
+import { create } from 'zustand'
+import { JERSEYS } from '../data/jerseys'
+
+export type Quality = 'high' | 'low'
+
+/** closed → opening (snapshot + lift-off) → open → closing (put back) → closed */
+export type ModalPhase = 'closed' | 'opening' | 'open' | 'closing'
+
+/** Where a jersey sits on screen in the rack: pivot in NDC, scale, and its yaw. */
+export interface ScreenPose {
+  ndcX: number
+  ndcY: number
+  /** Pixels per metre at the pivot's depth. */
+  pxPerM: number
+  yaw: number
+}
+
+const prefersLow =
+  typeof window !== 'undefined' &&
+  (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768)
+
+interface RackState {
+  hovered: number | null
+  /** Jersey shown in the modal. */
+  open: number | null
+  phase: ModalPhase
+  /** Jersey hidden on the rack because it's in the modal. */
+  lifted: number | null
+  /** Rack pose the modal jersey lifts off from (set by the rack when opening). */
+  openFrom: ScreenPose | null
+  quality: Quality
+  /** Rack render scale, adapted to the measured frame rate before dropping quality. */
+  dpr: number
+  setDpr: (dpr: number) => void
+  /** Modal: showing the back of the jersey. */
+  flipped: boolean
+  /** Modal: direction of the last ←/→ step, for the transition. */
+  stepDir: 1 | -1
+  toggleFlip: () => void
+  setHovered: (i: number | null) => void
+  openJersey: (i: number) => void
+  /** The modal cloth is ready at the rack pose: hide the rack's copy. */
+  liftOff: () => void
+  /** Rack finished its snapshot: the modal takes over. */
+  opened: () => void
+  close: () => void
+  /** Modal finished putting the jersey back. */
+  closed: () => void
+  step: (dir: 1 | -1) => void
+  setQuality: (q: Quality) => void
+}
+
+export const useRack = create<RackState>((set, get) => ({
+  hovered: null,
+  open: null,
+  phase: 'closed',
+  lifted: null,
+  openFrom: null,
+  quality: prefersLow ? 'low' : 'high',
+  dpr: prefersLow ? 1 : Math.min(1.5, typeof window !== 'undefined' ? window.devicePixelRatio : 1),
+  setDpr: (dpr) => set({ dpr }),
+  flipped: false,
+  stepDir: 1,
+  toggleFlip: () => set({ flipped: !get().flipped }),
+  setHovered: (i) => set({ hovered: i }),
+  openJersey: (i) => {
+    if (get().phase !== 'closed') return
+    set({ open: i, phase: 'opening', flipped: false })
+  },
+  liftOff: () => {
+    if (get().phase === 'opening') set({ lifted: get().open })
+  },
+  opened: () => {
+    if (get().phase === 'opening') set({ phase: 'open', hovered: null })
+  },
+  close: () => {
+    if (get().phase === 'open' || get().phase === 'opening') set({ phase: 'closing' })
+  },
+  closed: () => set({ phase: 'closed', open: null, lifted: null, openFrom: null }),
+  step: (dir) => {
+    const { open, phase } = get()
+    if (open === null || phase !== 'open') return
+    const next = (open + dir + JERSEYS.length) % JERSEYS.length
+    // the rack shows the old one again, hides the new one
+    set({ open: next, lifted: next, stepDir: dir, flipped: false })
+  },
+  setQuality: (q) => set({ quality: q }),
+}))
+
+if (import.meta.env.DEV) (window as unknown as { __store: typeof useRack }).__store = useRack
