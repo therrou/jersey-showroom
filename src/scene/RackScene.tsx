@@ -13,28 +13,36 @@ import { CursorTracker } from './CursorTracker'
 import { RackHover } from './RackHover'
 import { HangerRig } from './HangerRig'
 import { hangerX, rackView } from './RackHover'
-import { RAIL_LENGTH, slotPositions } from './rackLayout'
+import { RAIL_LENGTH, RAIL_Y, slotPositions } from './rackLayout'
 import { RackSnapshot } from './RackSnapshot'
-import { Room } from './Room'
+import { FLOOR_Y, Room } from './Room'
 
 const HOME = slotPositions(JERSEYS.length, null)
 // What must stay in frame: the rail with one jersey turned out, rail to floor.
 const FRAME_W = 2.75
 const FRAME_H = 1.55
-/** Portrait screens frame a stretch of rail and pan along it. */
-const FRAME_W_PORTRAIT = 1.35
+/** Portrait screens frame a stretch of rail and pan along it, fitting this band (at the
+ *  rail's plane) above the ticker: from over the LED strip down to the kick plate, so the
+ *  ice floor stays out of frame. */
+const PORTRAIT_TOP = RAIL_Y + 0.42
+const PORTRAIT_BOTTOM = FLOOR_Y + 0.2
+/** Narrowest stretch of rail a portrait screen shows (a turned-out jersey + neighbours). */
+const PORTRAIT_MIN_W = 0.8
+/** Height of the ticker banner (styles.css), which covers the bottom of the canvas. */
+const TICKER_PX = 30
 const LOOK_AT = new THREE.Vector3(0, 0.4, 0)
 /** Camera stays put this long after the modal closes (covers the hand-off fade). */
 const HOLD_AFTER_CLOSE_MS = 450
 
 /**
  * Fits the rack to the viewport. Landscape: whole rack + a little pointer parallax.
- * Portrait: a stretch of rail, panned by swipe and eased onto the tapped jersey.
+ * Portrait: a stretch of rail, eased onto the carousel's active jersey.
  */
 function CameraRig() {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const size = useThree((s) => s.size)
   const dist = useRef(4)
+  const height = useRef(LOOK_AT.y + 0.08)
   const look = useRef(LOOK_AT.clone())
   const holdUntil = useRef(0)
   useEffect(() => {
@@ -42,9 +50,23 @@ function CameraRig() {
     const aspect = size.width / size.height
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect)
     rackView.portrait = aspect < 1
-    const w = rackView.portrait ? FRAME_W_PORTRAIT : FRAME_W
-    dist.current = Math.max(FRAME_H / 2 / Math.tan(vfov / 2), w / 2 / Math.tan(hfov / 2)) + 0.15
+    let w = FRAME_W
+    if (rackView.portrait) {
+      // fill the screen height: the visible band (above the ticker) spans top → bottom,
+      // looking straight ahead, unless that would crop the rail narrower than the minimum
+      const visible = Math.max(0.5, (size.height - TICKER_PX) / size.height)
+      const span = PORTRAIT_TOP - PORTRAIT_BOTTOM
+      const t = Math.tan(vfov / 2)
+      const d = Math.max(span / visible / 2 / t, PORTRAIT_MIN_W / 2 / Math.tan(hfov / 2))
+      dist.current = d
+      height.current = PORTRAIT_TOP - d * t
+      w = 2 * d * Math.tan(hfov / 2)
+    } else {
+      dist.current = Math.max(FRAME_H / 2 / Math.tan(vfov / 2), w / 2 / Math.tan(hfov / 2)) + 0.15
+      height.current = LOOK_AT.y + 0.08
+    }
     rackView.panLimit = rackView.portrait ? Math.max(0, RAIL_LENGTH / 2 - w / 2 + 0.1) : 0
+    useRack.getState().setCarousel(rackView.portrait)
   }, [camera, size])
   useFrame(({ pointer }, dt) => {
     // Hold still from lift-off until shortly after the put-back hand-off: the modal copy
@@ -56,14 +78,16 @@ function CameraRig() {
     let x = pointer.x * 0.12
     if (rackView.portrait) {
       const hovered = useRack.getState().hovered
-      if (hovered !== null && !rackView.dragging) rackView.pan = hangerX[hovered] ?? rackView.pan
+      if (hovered !== null) rackView.pan = hangerX[hovered] ?? rackView.pan
       rackView.pan = THREE.MathUtils.clamp(rackView.pan, -rackView.panLimit, rackView.panLimit)
       x = rackView.pan
     }
-    camera.position.x += (x - camera.position.x) * (rackView.dragging ? 1 - Math.exp(-dt * 20) : k)
-    camera.position.y += (LOOK_AT.y + 0.08 + (rackView.portrait ? 0 : pointer.y * 0.05) - camera.position.y) * k
+    camera.position.x += (x - camera.position.x) * k
+    camera.position.y += (height.current + (rackView.portrait ? 0 : pointer.y * 0.05) - camera.position.y) * k
     camera.position.z += (dist.current - camera.position.z) * k
     look.current.x = rackView.portrait ? camera.position.x : LOOK_AT.x
+    // portrait looks straight ahead (the fit above assumes it); landscape tilts down a touch
+    look.current.y = rackView.portrait ? camera.position.y : LOOK_AT.y
     camera.lookAt(look.current)
   })
   return null

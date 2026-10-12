@@ -10,6 +10,8 @@ import { surfaceFrame } from './skin'
  *                                   normal/AO maps. _PATX/_PATY flat-pattern position,
  *                                   _SIDE 0 front / 1 back / 2 seam, _PART 0 body /
  *                                   1 collar band / 2 rib facing.
+ *                                   Morph targets (optional): the rack's drape variants
+ *                                   (tools/blender/variants.py), relative.
  *   JerseyCage / JerseyCageLow      welded simulation tubes on the same drape.
  *                                   _PIN 1 where the cloth rests on the hanger.
  * Each render mesh is bound to a cage (cage triangle + barycentrics + normal offset) and
@@ -66,6 +68,11 @@ interface Cage {
 const attr = (g: THREE.BufferGeometry, name: string) => {
   const a = g.getAttribute(name)
   if (!a) throw new Error(`jersey.glb: missing attribute ${name}`)
+  return floats(a)
+}
+
+/** Plain floats from a (possibly quantized / interleaved) attribute. */
+const floats = (a: THREE.BufferAttribute | THREE.InterleavedBufferAttribute) => {
   const out = new Float32Array(a.count * a.itemSize)
   for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) out[i * a.itemSize + k] = a.getComponent(i, k)
   return out
@@ -431,6 +438,12 @@ function buildMesh(renderSrc: THREE.BufferGeometry, cageSrc: THREE.BufferGeometr
   geometry.setIndex(Array.from(indexOf(renderSrc)))
   geometry.setAttribute('position', new THREE.BufferAttribute(attr(renderSrc, 'position'), 3))
   geometry.setAttribute('normal', new THREE.BufferAttribute(attr(renderSrc, 'normal'), 3))
+  // drape variants for the rack (the modal's cloth copies only what it needs, not these)
+  for (const key of ['position', 'normal'] as const) {
+    const targets = renderSrc.morphAttributes[key]
+    if (targets?.length) geometry.morphAttributes[key] = targets.map((t) => new THREE.BufferAttribute(floats(t), 3))
+  }
+  geometry.morphTargetsRelative = renderSrc.morphTargetsRelative
   // glTF stores v downward; the kit canvases and the baked maps are v-up (flipY)
   for (const [from, to] of [
     ['uv', 'uv'],
@@ -452,7 +465,9 @@ function buildMesh(renderSrc: THREE.BufferGeometry, cageSrc: THREE.BufferGeometr
   mergeSeamNormals(geometry, seamPairs)
   geometry.computeBoundingBox()
   geometry.computeBoundingSphere()
-  const bounds = geometry.boundingBox!.clone()
+  // the rest drape's bounds (the rack's colliders and outline): three's box also spans the
+  // morph targets, i.e. every drape variant at full weight
+  const bounds = new THREE.Box3().setFromBufferAttribute(geometry.getAttribute('position') as THREE.BufferAttribute)
 
   return {
     geometry,

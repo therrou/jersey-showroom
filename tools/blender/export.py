@@ -8,6 +8,7 @@ public/models/jersey_normal.webp / jersey_ao.webp (UV1 maps).
 Objects (glTF frame: +y up, front +z, origin at the top of the collar, metres):
   JerseyRender     ~24k tris  UV0 kit atlas, UV1 bake; _PATX/_PATY/_SIDE/_PART
   JerseyRenderLow  ~6k tris   same, coarser tube (same collar band + facings)
+    (+ morph targets drape1..N: the rack's drape variants, see variants.py)
   JerseyCage       ~2.5k verts  welded tube on the same drape; _PATX/_PATY/_SIDE/_PIN
   JerseyCageLow    ~1.2k verts
 _SIDE: 0 front, 1 back, 2 seam.  _PART: 0 body, 1 collar band, 2 rib facing.
@@ -22,6 +23,7 @@ import numpy as np
 
 import drape
 import garment
+import variants
 from patmap import PatternMap
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -187,7 +189,12 @@ def run():
     render_low = _export_copy("JerseyRenderLow_src", "JerseyRenderLow")
     for o in (render, render_low):
         _export_attrs(o)
+    drapes = variants.available()
+    morphs = bool(drapes)
     report = {}
+    if morphs:
+        for o in (render, render_low):
+            report[o.name + " morph max"] = variants.add_shape_keys(o, drapes)
     for o in (render, render_low, cage, cage_low):
         report[o.name] = (len(o.data.vertices), sum(len(p.vertices) - 2 for p in o.data.polygons))
     bpy.ops.object.select_all(action="DESELECT")
@@ -198,7 +205,8 @@ def run():
         filepath=path, export_format="GLB", use_selection=True, export_apply=True,
         export_texcoords=True, export_normals=True, export_materials="NONE",
         export_attributes=True, export_yup=True, export_animations=False, export_skins=False,
-        export_morph=False, export_cameras=False, export_lights=False,
+        export_morph=morphs, export_morph_normal=morphs, export_morph_tangent=False,
+        export_cameras=False, export_lights=False,
         export_meshopt_compression_enable=True, export_meshopt_extension="EXT_meshopt_compression",
     )
     for o in (render, render_low):

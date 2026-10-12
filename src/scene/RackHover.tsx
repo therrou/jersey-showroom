@@ -11,7 +11,7 @@ export const hangerX: number[] = []
 export const hangerYaw: number[] = []
 
 /** Portrait/touch view state shared with the camera rig. */
-export const rackView = { portrait: false, pan: 0, panLimit: 0, dragging: false, touch: false }
+export const rackView = { portrait: false, pan: 0, panLimit: 0, touch: false }
 
 const TOP = RAIL_Y + 0.05
 const BOTTOM = RAIL_Y - JERSEY_DROP - 0.86
@@ -39,13 +39,17 @@ function pick(x: number, y: number, hovered: number | null): number | null {
 
 const PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
 const TAP_SLOP = 8 // px
+/** Carousel: a horizontal swipe this long steps one jersey. */
+const SWIPE_PX = 40
 
 /**
  * Hover by rail position rather than raycasting slivers of fabric: the nearest hanger
  * wins, and the turned-out jersey holds the hover across its full width, so moving
  * across the rack never flickers through gaps.
  *
- * Touch: tap turns a jersey out, a second tap opens it; swipes pan the rail in portrait.
+ * Touch (landscape): tap turns a jersey out, a second tap opens it.
+ * Carousel (portrait, any pointer): the active jersey faces you; tapping it flips it,
+ * tapping a neighbour or swiping steps to another one. There's no modal.
  */
 export function RackHover() {
   const gl = useThree((s) => s.gl)
@@ -53,9 +57,14 @@ export function RackHover() {
 
   // Mouse: hover follows the pointer every frame.
   useFrame(() => {
-    const { hovered, phase, setHovered } = useRack.getState()
+    const { hovered, phase, setHovered, carousel } = useRack.getState()
     if (phase !== 'closed' || rackView.touch) return
     const next = cursor.active ? pick(cursor.pos.x, cursor.pos.y, hovered) : null
+    if (carousel) {
+      // the active slide only changes on a tap/swipe/arrow, never on hover
+      gl.domElement.style.cursor = next !== null ? 'pointer' : ''
+      return
+    }
     if (next !== hovered) setHovered(next)
     gl.domElement.style.cursor = next !== null ? 'pointer' : ''
   })
@@ -71,51 +80,65 @@ export function RackHover() {
       ray.setFromCamera(ndc, camera)
       return ray.ray.intersectPlane(PLANE, hit)
     }
-    const drag = { id: -1, x0: 0, pan0: 0, moved: false }
+    const drag = { id: -1, x0: 0, y0: 0, moved: false }
 
     const down = (e: PointerEvent) => {
       rackView.touch = e.pointerType === 'touch'
-      if (!rackView.touch) return
+      if (!rackView.touch && !useRack.getState().carousel) return
       drag.id = e.pointerId
       drag.x0 = e.clientX
-      drag.pan0 = rackView.pan
+      drag.y0 = e.clientY
       drag.moved = false
     }
     const move = (e: PointerEvent) => {
       if (e.pointerId !== drag.id) return
-      const dx = e.clientX - drag.x0
-      if (Math.abs(dx) > TAP_SLOP) drag.moved = true
-      if (!drag.moved || !rackView.portrait) return
-      // swipe pans the camera along the rail (1:1 with the finger at the rail plane)
-      const vfov = THREE.MathUtils.degToRad(camera.fov)
-      const worldPerPx = (2 * camera.position.z * Math.tan(vfov / 2)) / el.clientHeight
-      rackView.dragging = true
-      rackView.pan = drag.pan0 - dx * worldPerPx
-      if (useRack.getState().hovered !== null) useRack.getState().setHovered(null)
+      if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > TAP_SLOP) drag.moved = true
     }
     const up = (e: PointerEvent) => {
       if (e.pointerId !== drag.id) return
       drag.id = -1
-      rackView.dragging = false
-      if (drag.moved) return
-      // tap: first tap turns a jersey out, a second tap on the same one opens it
+      const { hovered, carousel, setHovered, openJersey, showSlide, stepSlide, flipSlide } = useRack.getState()
+      if (e.type === 'pointercancel') return
+      if (drag.moved) {
+        // carousel: a horizontal swipe steps one jersey (swipe left = next)
+        const dx = e.clientX - drag.x0
+        if (carousel && Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(e.clientY - drag.y0)) stepSlide(dx < 0 ? 1 : -1)
+        return
+      }
       const p = toWorld(e)
-      const { hovered, setHovered, openJersey } = useRack.getState()
       const next = p ? pick(p.x, p.y, hovered) : null
+      if (carousel) {
+        // tap the active jersey to flip it, a neighbour to make it the active one
+        if (next === null) return
+        if (next === hovered) flipSlide()
+        else showSlide(next)
+        return
+      }
+      // tap: first tap turns a jersey out, a second tap on the same one opens it
       if (next !== null && next === hovered) openJersey(next)
       else setHovered(next)
     }
     const click = (e: MouseEvent) => {
       if (rackView.touch) return
-      const { hovered, openJersey } = useRack.getState()
+      const { hovered, openJersey, carousel } = useRack.getState()
+      if (carousel) return
       if (hovered !== null && (e as PointerEvent).pointerType !== 'touch') openJersey(hovered)
+    }
+    const key = (e: KeyboardEvent) => {
+      const s = useRack.getState()
+      if (!s.carousel || s.phase !== 'closed') return
+      if (e.key === 'ArrowRight') s.stepSlide(1)
+      else if (e.key === 'ArrowLeft') s.stepSlide(-1)
+      else if (e.key.toLowerCase() === 'f') s.flipSlide()
     }
     el.addEventListener('pointerdown', down)
     el.addEventListener('pointermove', move)
     el.addEventListener('pointerup', up)
     el.addEventListener('pointercancel', up)
     el.addEventListener('click', click)
+    window.addEventListener('keydown', key)
     return () => {
+      window.removeEventListener('keydown', key)
       el.removeEventListener('pointerdown', down)
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)

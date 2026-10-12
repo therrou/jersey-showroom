@@ -152,6 +152,8 @@ body {
 @media (hover: hover) { .modal__arrow:hover { border-color: var(--ink); background: rgba(47, 178, 255, 0.18); } }
 .modal__arrow--prev { left: max(16px, 18vw); }
 .modal__arrow--next { right: max(16px, 18vw); }
+/* portrait carousel: the arrows flank the jersey's title, clear of the hem */
+.chrome .modal__arrow { top: auto; bottom: 114px; }
 
 .modal__info {
   position: absolute; left: 0; right: 0; bottom: 36px;
@@ -174,6 +176,7 @@ body {
   .logo { font-size: 24px; }
   .caption { bottom: 104px; font-size: 18px; }
   .modal__arrow { top: auto; bottom: 150px; }
+  .chrome .modal__arrow { bottom: 98px; }
   .modal__title { font-size: 24px; }
   .modal__info { bottom: 40px; }
   .modal__hint { top: 58px; }

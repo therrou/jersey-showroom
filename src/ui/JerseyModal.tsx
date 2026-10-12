@@ -114,7 +114,7 @@ function ModalUI() {
             animate={{ opacity: 1, transition: { delay: 1.2, duration: 0.4 } }}
             exit={{ opacity: 0, transition: { duration: 0.15 } }}
           >
-            {coarse ? 'Pull the fabric · swipe beside it to turn' : 'Grab the fabric · drag the background to turn it'}
+            {coarse ? 'Tap to flip · pull the fabric · swipe beside it to turn' : 'Click to flip · drag the fabric or the background'}
           </motion.p>
         )}
       </AnimatePresence>
@@ -128,11 +128,13 @@ export function JerseyModal() {
   const hovered = useRack((s) => s.hovered)
   const quality = useRack((s) => s.quality)
   const dpr = useRack((s) => s.dpr)
+  // the portrait carousel never opens the modal: nothing to warm
+  const carousel = useRack((s) => s.carousel)
 
   // Warm the modal's 4K kit for whatever the user is lingering on, and for the neighbours
   // of the open jersey, so opening and ←/→ never wait on texture painting.
   useEffect(() => {
-    const i = phase === 'closed' ? hovered : open
+    const i = phase === 'closed' ? (carousel ? null : hovered) : open
     if (i === null) return
     const n = JERSEYS.length
     const width = modalKitWidth(quality)
@@ -147,7 +149,7 @@ export function JerseyModal() {
       phase === 'closed' ? 220 : 500,
     )
     return () => window.clearTimeout(t)
-  }, [phase, hovered, open, quality])
+  }, [phase, hovered, open, quality, carousel])
 
   // …and free the 4K kits nobody needs any more: only the open jersey and its neighbours
   // (or, on the rack, the one being lingered on) stay resident
@@ -156,12 +158,12 @@ export function JerseyModal() {
     if (quality === 'high') {
       const n = JERSEYS.length
       if (phase === 'closed') {
-        if (hovered !== null) keep.push(hovered)
+        if (hovered !== null && !carousel) keep.push(hovered)
       } else if (open !== null) keep.push(open, (open + 1) % n, (open - 1 + n) % n)
     }
     const t = window.setTimeout(() => releaseModalKits(keep), RELEASE_KITS_MS)
     return () => window.clearTimeout(t)
-  }, [phase, hovered, open, quality])
+  }, [phase, hovered, open, quality, carousel])
 
   useEffect(() => {
     if (phase !== 'open') return

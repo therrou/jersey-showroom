@@ -17,6 +17,7 @@ export function Chrome() {
   const hovered = useRack((s) => s.hovered)
   const phase = useRack((s) => s.phase)
   const open = useRack((s) => s.open)
+  const carousel = useRack((s) => s.carousel)
   const jersey = hovered !== null ? JERSEYS[hovered] : null
   const items = Array.from({ length: 16 }, () => TICKER).flat()
   // the banner stays up over the modal, in the open jersey's main colour
@@ -47,6 +48,31 @@ export function Chrome() {
             )}
           </AnimatePresence>
         </div>
+
+        {carousel && (
+          <>
+            <button
+              className="modal__arrow modal__arrow--prev"
+              type="button"
+              aria-label="Previous jersey"
+              onClick={() => useRack.getState().stepSlide(-1)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden>
+                <path d="M15 5l-7 7 7 7" />
+              </svg>
+            </button>
+            <button
+              className="modal__arrow modal__arrow--next"
+              type="button"
+              aria-label="Next jersey"
+              onClick={() => useRack.getState().stepSlide(1)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden>
+                <path d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
       <div className="ticker" style={tickerStyle} aria-hidden>
         <div className="ticker__track">

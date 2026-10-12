@@ -1,4 +1,4 @@
-import { use, useEffect, useMemo, useRef, type RefObject } from 'react'
+import { use, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import {
   BallCollider,
@@ -14,6 +14,7 @@ import { m, physics } from '../config/physics'
 import { JERSEYS } from '../data/jerseys'
 import { jerseyAssets, jerseyKit } from '../jersey/assets'
 import { createFabricDepthMaterial, createFabricMaterial, createFabricUniforms } from '../jersey/fabricMaterial'
+import { sleeveRig } from '../jersey/sleeves'
 import { useRack } from '../state/store'
 import { cursor } from './CursorTracker'
 import { Hanger } from './Hanger'
@@ -33,6 +34,42 @@ const REJOIN_MS = 1400
 // Side-on jerseys draw the light mesh; the turned-out one swaps to the detailed mesh at
 // once, and back only after it has turned side-on again (so the swap is never seen).
 const LOD_DOWN_MS = 1100
+// Per-jersey drape variety (side-on only; a turned-out jersey eases back to the shared
+// drape, which is what the modal's cloth starts from). Sleeves hang just in front of the
+// body's sides, so they swing mostly forward, and always splay out a little.
+const SWING = [-0.05, 0.16] // rad, + = cuff forward
+const SPLAY = [0.025, 0.09] // rad, cuff outward
+const HEM_TILT_Z = 0.22 // ± drop per metre toward the front
+const HEM_TILT_X = 0.05 // ± drop per metre to the side
+const FOLD = [0.55, 1.6] // × the base fold depth
+const BODY_TWIST = 0.1 // ± rad at the hem
+const HEM_OPEN = 0.35 // ± × the tube's depth at the hem
+const HEM_SHIFT = 0.015 // ± m forward/back at the hem
+const EDGE_WAVE = 0.012 // up to m
+const VARIETY_RATE = 6 // 1/s, easing in/out of the variety
+// Drape variants baked in Blender (morph targets): each jersey mostly hangs in one of the
+// base + N drapes (neighbours never share it), with a little of another mixed in.
+const DRAPE_MIX = [0.15, 0.35]
+
+/** Morph weights over the variant drapes for jersey `index` (base drape = the rest). */
+function drapeWeights(index: number, seed: number, variants: number) {
+  const w = new Array<number>(variants).fill(0)
+  if (!variants) return w
+  const n = variants + 1
+  const main = (index * 3 + 1) % n
+  const other = (main + 1 + Math.floor(hash(seed, 12) * (n - 1))) % n
+  const share = lerp(DRAPE_MIX[0], DRAPE_MIX[1], hash(seed, 13))
+  if (main) w[main - 1] += 1 - share
+  if (other) w[other - 1] += share
+  return w
+}
+
+/** Deterministic 0–1 noise from a seed and a channel. */
+const hash = (seed: number, k: number) => {
+  const x = Math.sin(seed * 127.1 + k * 311.7) * 43758.5453
+  return x - Math.floor(x)
+}
+const lerp = THREE.MathUtils.lerp
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 const _q = new THREE.Quaternion()
@@ -73,8 +110,40 @@ export function HangerRig({ index, homeX }: Props) {
     // the GLB garment already hangs in real folds: the shader's seeded ones only add a
     // little per-jersey variety so the rack doesn't look cloned
     u.uFold.value = mesh.draped ? 0.33 : 1
+    const rig = sleeveRig(mesh)
+    sleeveRig(farMesh) // (same drape: only its weights are needed)
+    u.uPivotR.value.copy(rig.pivotR)
+    u.uPivotL.value.copy(rig.pivotL)
     return u
-  }, [seed, mesh])
+  }, [seed, mesh, farMesh])
+  // this jersey's own sleeve pose, hem and folds, applied ×`variety.mix`
+  const variety = useMemo(() => {
+    const v = {
+      sleeve: new THREE.Vector4(
+        lerp(SWING[0], SWING[1], hash(seed, 1)),
+        lerp(SPLAY[0], SPLAY[1], hash(seed, 2)),
+        lerp(SWING[0], SWING[1], hash(seed, 3)),
+        lerp(SPLAY[0], SPLAY[1], hash(seed, 4)),
+      ),
+      hem: new THREE.Vector2((hash(seed, 5) * 2 - 1) * HEM_TILT_Z, (hash(seed, 6) * 2 - 1) * HEM_TILT_X),
+      body: new THREE.Vector4(
+        (hash(seed, 8) * 2 - 1) * BODY_TWIST,
+        (hash(seed, 9) * 2 - 1) * HEM_OPEN,
+        (hash(seed, 10) * 2 - 1) * HEM_SHIFT,
+        hash(seed, 11) * EDGE_WAVE,
+      ),
+      fold: lerp(FOLD[0], FOLD[1], hash(seed, 7)),
+      drapes: drapeWeights(index, seed, mesh.geometry.morphAttributes.position?.length ?? 0),
+      base: uniforms.uFold.value,
+      mix: 1,
+    }
+    // start in it (applyVariety's job from then on)
+    uniforms.uSleeve.value.copy(v.sleeve)
+    uniforms.uHem.value.copy(v.hem)
+    uniforms.uBody.value.copy(v.body)
+    uniforms.uFold.value = v.base * v.fold
+    return v
+  }, [seed, uniforms, index, mesh])
   const material = useMemo(
     () =>
       createFabricMaterial(kit, {
@@ -105,13 +174,14 @@ export function HangerRig({ index, homeX }: Props) {
       if (near) show(mesh)
       else lodT = window.setTimeout(() => show(farMesh), LOD_DOWN_MS)
     }
-    const apply = (hovered: number | null) => {
+    const apply = (hovered: number | null, flipped: boolean) => {
       target.current.x = slotPositions(JERSEYS.length, hovered)[index]
-      target.current.yaw = hovered === index ? 0 : SIDE_YAW + yawJitter
+      // turned out: front to the viewer, or its back (carousel flip)
+      target.current.yaw = hovered === index ? (flipped ? Math.PI : 0) : SIDE_YAW + yawJitter
       target.current.hovered = hovered === index
       lod(hovered === index)
     }
-    apply(useRack.getState().hovered)
+    apply(useRack.getState().hovered, useRack.getState().rackFlipped)
     // the jersey lifted into the modal disappears from the rack until it's put back, and
     // stops colliding: it's placed straight into its slot for the put-back, which would
     // otherwise overlap the neighbours and fling them
@@ -124,7 +194,7 @@ export function HangerRig({ index, homeX }: Props) {
     }
     show(useRack.getState().lifted)
     const off = useRack.subscribe((s, prev) => {
-      if (s.hovered !== prev.hovered) apply(s.hovered)
+      if (s.hovered !== prev.hovered || s.rackFlipped !== prev.rackFlipped) apply(s.hovered, s.rackFlipped)
       if (s.lifted !== prev.lifted && (s.lifted === index || prev.lifted === index)) show(s.lifted)
     })
     return () => {
@@ -196,6 +266,22 @@ export function HangerRig({ index, homeX }: Props) {
     twist: 0,
     twistV: 0,
   })
+  const applyVariety = () => {
+    const v = variety
+    uniforms.uSleeve.value.copy(v.sleeve).multiplyScalar(v.mix)
+    uniforms.uHem.value.copy(v.hem).multiplyScalar(v.mix)
+    uniforms.uBody.value.copy(v.body).multiplyScalar(v.mix)
+    uniforms.uFold.value = v.base * lerp(1, v.fold, v.mix)
+    const f = fabric.current
+    if (f && v.drapes.length) {
+      f.morphTargetInfluences ??= v.drapes.map(() => 0)
+      for (let k = 0; k < v.drapes.length; k++) f.morphTargetInfluences[k] = v.drapes[k] * v.mix
+    }
+  }
+  // the fabric mesh mounts after the memo above: give it its drape blend before its first
+  // frame (R3F sets the geometry after construction, so three never sized the weights)
+  useLayoutEffect(applyVariety)
+
   // Put-back: the moment the modal starts carrying this jersey home, its (hidden) rack
   // copy is placed exactly where it will end up — in its turned-out slot, facing, at rest,
   // fake-cloth motion cleared — so the flight has a fixed target and nothing is still
@@ -228,11 +314,14 @@ export function HangerRig({ index, homeX }: Props) {
         uniforms.uTwist.value = 0
         uniforms.uRipple.value = 0
         uniforms.uFlare.value = 0
+        variety.mix = 0
+        applyVariety()
         // publish the final pose now, so the modal aims at it from the first frame
         hangerX[index] = x
         hangerYaw[index] = 0
       }),
-    [index, uniforms],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [index, uniforms, variety],
   )
 
   useFrame((_, rawDelta) => {
@@ -283,6 +372,14 @@ export function HangerRig({ index, homeX }: Props) {
     u.uTwist.value = s.twist
     u.uLag.value.copy(s.lag)
     u.uTime.value += dt
+
+    // drape variety: on while side-on, eased off while turned out
+    const want = target.current.hovered ? 0 : 1
+    if (variety.mix !== want) {
+      variety.mix += (want - variety.mix) * (1 - Math.exp(-dt * VARIETY_RATE))
+      if (Math.abs(want - variety.mix) < 1e-3) variety.mix = want
+      applyVariety()
+    }
   })
 
   return (

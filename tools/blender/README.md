@@ -18,6 +18,7 @@ import build; print(build.run())      # ~4 min
 | drape | `drape.py` + `xpbd.py` | numpy position-based cloth: flat-pattern stretch (soft in compression), bending, front↔back volume, tethers to the pins, hanger collision, self-collision, a soft guide for the sleeve hang angle |
 | detail | `detail.py`, `collar.py`, `facings.py` | denoise; rib collar band along the draped neckline (UVs land on the painter's collar band); turned-under rib facings at hem and cuffs |
 | bake | `bake.py` | `JerseyRender` (UV0 kit, UV1 bake), Catmull-Clark high-poly with seam grooves/topstitch/wrinkles, Cycles tangent normal (2K) + AO (1K) → `assets-src/textures/` |
+| variants | `variants.py` | optional: `variants.drape_variant(i)` re-drapes the tube with other seeded folds / sleeve hang / solver noise (`JerseyDrapeVar<i>`, ~2.5 min each); the export adds them to the render meshes as morph targets `drape1..N`, which the rack blends per jersey |
 | export | `export.py` | `JerseyCage` (~2.5k verts) / `JerseyCageLow` (~1.2k) on the same drape via `patmap.py`, `JerseyRenderLow` (~6.7k tris), meshopt GLB + WebP maps |
 
 Why not Blender cloth: its collision with the thin hanger bar and the welded seams made

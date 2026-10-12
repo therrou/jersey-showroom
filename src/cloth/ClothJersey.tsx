@@ -23,6 +23,9 @@ export const modalPointer = {
 export const CLOTH_GRID = { high: { cols: 48, rows: 36, substeps: 10 }, low: { cols: 30, rows: 23, substeps: 8 } }
 export const modalKitWidth = (q: 'high' | 'low') => (q === 'high' ? 4096 : 2048)
 const WIND_RADIUS = 0.24
+/** A press on the fabric that moves less than this and lets go quickly is a click (flip). */
+const CLICK_SLOP = 6 // px
+const CLICK_MS = 350
 
 interface Props {
   index: number
@@ -176,6 +179,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
   })
 
   // Grab-and-pull: pick the particle under the pointer, drag it on a camera-facing plane.
+  // A plain click (no drag) flips the jersey instead.
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
     if (!interactive || e.face == null) return
     e.stopPropagation()
@@ -198,13 +202,19 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
     const ray = new THREE.Raycaster()
     const ndc = new THREE.Vector2()
     const hit = new THREE.Vector3()
+    const x0 = e.nativeEvent.clientX
+    const y0 = e.nativeEvent.clientY
+    const t0 = performance.now()
+    let dragged = false
     const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > CLICK_SLOP) dragged = true
       const rect = gl.domElement.getBoundingClientRect()
       ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1)
       ray.setFromCamera(ndc, camera)
       if (s.grab && ray.ray.intersectPlane(s.grabPlane, hit)) s.grab = { id: s.grab.id, x: hit.x, y: hit.y, z: hit.z }
     }
-    const up = () => {
+    const up = (ev: PointerEvent) => {
+      if (ev.type === 'pointerup' && !dragged && performance.now() - t0 < CLICK_MS) useRack.getState().toggleFlip()
       s.grab = null
       gl.domElement.style.cursor = ''
       window.removeEventListener('pointermove', move)

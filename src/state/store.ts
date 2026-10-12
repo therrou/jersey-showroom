@@ -37,6 +37,16 @@ interface RackState {
   /** Modal: direction of the last ←/→ step, for the transition. */
   stepDir: 1 | -1
   toggleFlip: () => void
+  /** Portrait screens browse the rack itself as a carousel (no modal): `hovered` is the
+   *  active slide, turned out facing front, or back while `rackFlipped`. */
+  carousel: boolean
+  rackFlipped: boolean
+  setCarousel: (on: boolean) => void
+  /** Carousel: make jersey `i` the active slide (front first). */
+  showSlide: (i: number) => void
+  /** Carousel: step to the next/previous jersey, wrapping around. */
+  stepSlide: (dir: 1 | -1) => void
+  flipSlide: () => void
   setHovered: (i: number | null) => void
   openJersey: (i: number) => void
   /** The modal cloth is ready at the rack pose: hide the rack's copy. */
@@ -62,6 +72,20 @@ export const useRack = create<RackState>((set, get) => ({
   flipped: false,
   stepDir: 1,
   toggleFlip: () => set({ flipped: !get().flipped }),
+  carousel: false,
+  rackFlipped: false,
+  setCarousel: (on) => {
+    if (on === get().carousel) return
+    // entering: the first jersey is the active slide; leaving: back to the plain rack
+    if (on) set({ carousel: true, rackFlipped: false, hovered: get().hovered ?? 0 })
+    else set({ carousel: false, rackFlipped: false })
+  },
+  showSlide: (i) => set({ hovered: i, rackFlipped: false }),
+  stepSlide: (dir) => {
+    const n = JERSEYS.length
+    set({ hovered: ((get().hovered ?? 0) + dir + n) % n, rackFlipped: false })
+  },
+  flipSlide: () => set({ rackFlipped: !get().rackFlipped }),
   setHovered: (i) => set({ hovered: i }),
   openJersey: (i) => {
     if (get().phase !== 'closed') return

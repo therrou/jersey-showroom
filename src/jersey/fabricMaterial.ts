@@ -10,7 +10,8 @@ import { getKnitHeightMap, type JerseyKit } from './jerseyTexture'
  *    partially, to direct light, so the underarms read even under a strong key
  *  - optional rack "fake cloth" vertex motion (see useClothFake in HangerRig):
  *      uLag hem inertia, uTwist trailing twist, uRipple speed ripples, uFlare sleeve flare,
- *      uSeed per-jersey static drape folds
+ *      uSeed per-jersey static drape folds, uSleeve/uHem per-jersey sleeve swing and hem
+ *      tilt (rack variety; sleeve weights + pivots from jersey/sleeves.ts)
  *  - uFade for the modal carousel reveal
  */
 export interface FabricUniforms {
@@ -21,6 +22,15 @@ export interface FabricUniforms {
   uFlare: { value: number }
   uSeed: { value: number }
   uFold: { value: number }
+  /** Sleeve pose, radians: swing forward (+x sleeve), splay outward (+x), same for −x. */
+  uSleeve: { value: THREE.Vector4 }
+  /** Hem tilt: drop per metre toward the front (z), and toward +x. */
+  uHem: { value: THREE.Vector2 }
+  /** Lower body: static twist (rad at the hem), hem opening (× depth), forward shift (m),
+   *  side-edge wave (m). */
+  uBody: { value: THREE.Vector4 }
+  uPivotR: { value: THREE.Vector3 }
+  uPivotL: { value: THREE.Vector3 }
 }
 
 export function createFabricUniforms(seed: number): FabricUniforms {
@@ -32,6 +42,11 @@ export function createFabricUniforms(seed: number): FabricUniforms {
     uFlare: { value: 0 },
     uSeed: { value: seed },
     uFold: { value: 1 },
+    uSleeve: { value: new THREE.Vector4() },
+    uHem: { value: new THREE.Vector2() },
+    uBody: { value: new THREE.Vector4() },
+    uPivotR: { value: new THREE.Vector3() },
+    uPivotL: { value: new THREE.Vector3() },
   }
 }
 
@@ -43,6 +58,32 @@ uniform float uRipple;
 uniform float uFlare;
 uniform float uSeed;
 uniform float uFold;
+uniform vec4 uSleeve;
+uniform vec2 uHem;
+uniform vec4 uBody;
+uniform vec3 uPivotR;
+uniform vec3 uPivotL;
+attribute float aSleeve;
+
+// Static per-jersey sleeve pose: each sleeve swings about its draped shoulder point,
+// forward/back (about x) and outward (about z), weighted across the armhole.
+vec3 sleeveTurn(vec3 v) {
+  float a = abs(aSleeve);
+  float right = step(0.0, aSleeve);
+  // rotX by -swing: the cuff (below the pivot) moves forward (+z) for swing > 0
+  float ax = -mix(uSleeve.z, uSleeve.x, right) * a;
+  // rotZ: the cuff moves outward (+x on the +x sleeve, -x on the other)
+  float az = mix(-uSleeve.w, uSleeve.y, right) * a;
+  float c = cos(ax), s = sin(ax);
+  v = vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+  c = cos(az); s = sin(az);
+  return vec3(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+}
+vec3 sleevePose(vec3 p) {
+  if (aSleeve == 0.0) return p;
+  vec3 pivot = aSleeve > 0.0 ? uPivotR : uPivotL;
+  return pivot + sleeveTurn(p - pivot);
+}
 
 vec3 clothDisplace(vec3 p) {
   float hang = clamp(-p.y / 0.84, 0.0, 1.0);
@@ -52,6 +93,14 @@ vec3 clothDisplace(vec3 p) {
   float folds = sin(p.x * 11.0 + uSeed * 3.1) * 0.6 + sin(p.x * 23.0 + uSeed * 7.7 + p.y * 3.0) * 0.4;
   p.z += folds * 0.015 * hang * uFold;
   p.x *= 1.0 - 0.04 * h2 * uFold;
+  // the hem hangs a little unevenly (front/back, side to side)
+  p.y += (uHem.x * p.z + uHem.y * p.x) * h2;
+  // per-jersey hang of the lower body: the hem opens more or less at the side seams, the
+  // fold there sits further forward or back with a wavy edge, and the hem turns slightly
+  p.z = p.z * (1.0 + uBody.y * h2) + uBody.z * h2 + uBody.w * sin(p.y * 9.0 + uSeed * 5.3) * hang;
+  float tb = uBody.x * h2;
+  float cb = cos(tb), sb = sin(tb);
+  p.xz = mat2(cb, sb, -sb, cb) * p.xz;
 
   // trailing twist (lower body lags the hanger's yaw)
   float a = uTwist * h2;
@@ -78,13 +127,15 @@ function patchDisplacement(shader: THREE.WebGLProgramParametersWithUniforms, uni
   shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${DISPLACE_GLSL}`)
   if (withNormals) {
     shader.vertexShader = shader.vertexShader.replace(
-      '#include <beginnormal_vertex>',
-      /* glsl */ `#include <beginnormal_vertex>
+      // (after the drape-variant morph: the motion rides on whichever drape is showing)
+      '#include <morphnormal_vertex>',
+      /* glsl */ `#include <morphnormal_vertex>
       {
         // finite-difference the displacement in the garment plane and apply the change in
         // slope as a perturbation; faded out on the rounded edges (normal.z → 0)
         const float e = 0.006;
-        vec3 p0 = position;
+        if (aSleeve != 0.0) objectNormal = sleeveTurn(objectNormal);
+        vec3 p0 = sleevePose(position);
         vec3 d0 = clothDisplace(p0) - p0;
         vec3 dx = clothDisplace(p0 + vec3(e, 0.0, 0.0)) - (p0 + vec3(e, 0.0, 0.0));
         vec3 dy = clothDisplace(p0 + vec3(0.0, e, 0.0)) - (p0 + vec3(0.0, e, 0.0));
@@ -97,8 +148,8 @@ function patchDisplacement(shader: THREE.WebGLProgramParametersWithUniforms, uni
     )
   }
   shader.vertexShader = shader.vertexShader.replace(
-    '#include <begin_vertex>',
-    '#include <begin_vertex>\ntransformed = clothDisplace(transformed);',
+    '#include <morphtarget_vertex>',
+    '#include <morphtarget_vertex>\ntransformed = clothDisplace(sleevePose(transformed));',
   )
 }
 

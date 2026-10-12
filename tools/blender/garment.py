@@ -42,6 +42,7 @@ SLEEVE_DEPTH = 0.034  # half depth of the sleeve tubes
 ARMPIT_SOFT = (0.05, 0.16)
 PREPOSE = True
 FOLD_DEPTH = 0.05
+FOLD_PHASE = (0.7, 2.1, -1.3)  # phases of the seeded folds (variants.py changes them)
 SLEEVE_DROP_DEG = 0
 SLEEVE_FORWARD = 0.045  # sleeves start (and settle) in front of the side seams
 SLEEVE_BLEND = (0.0, 0.1)
@@ -108,8 +109,9 @@ def fold_seed(x, y):
     solver's drapeRest)."""
     hang = smoothstep(-0.12, -0.8, y)
     body = 1 - smoothstep(0.28, 0.36, abs(x))
-    f = (math.sin(x * 34.0 + 0.7 + y * 2.0) * 0.45 + math.sin(x * 57.0 + y * 6.0 + 2.1) * 0.25
-         + math.sin(x * 19.0 - 1.3) * 0.3)
+    p0, p1, p2 = FOLD_PHASE
+    f = (math.sin(x * 34.0 + p0 + y * 2.0) * 0.45 + math.sin(x * 57.0 + y * 6.0 + p1) * 0.25
+         + math.sin(x * 19.0 + p2) * 0.3)
     return FOLD_DEPTH * hang * body * f
 
 

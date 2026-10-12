@@ -123,7 +123,12 @@ function ShaderPrewarm() {
     const grid = CLOTH_GRID[quality]
     const source = assets.cloth(quality, grid)
     const mat = createFabricMaterial(kit, { fade: { value: 1 }, maps: source.maps, inside: source.draped ? '#808080' : undefined })
-    const mesh = new THREE.Mesh(source.geometry, mat)
+    // the cloth's own geometry has no morph targets (the rack's drape variants): match it,
+    // or this compiles a different program
+    const geo = new THREE.BufferGeometry()
+    geo.setIndex(source.geometry.getIndex())
+    for (const [k, a] of Object.entries(source.geometry.attributes)) geo.setAttribute(k, a)
+    const mesh = new THREE.Mesh(geo, mat)
     mesh.castShadow = mesh.receiveShadow = true
     mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
     scene.add(mesh)
