@@ -19,9 +19,11 @@ export function Chrome() {
   const open = useRack((s) => s.open)
   const carousel = useRack((s) => s.carousel)
   const jersey = hovered !== null ? JERSEYS[hovered] : null
-  const items = Array.from({ length: 16 }, () => TICKER).flat()
-  // the banner stays up over the modal, in the open jersey's main colour
-  const kit = open !== null && phase !== 'closing' && phase !== 'closed' ? JERSEYS[open].base : null
+  // the banner stays up over the modal, in the open jersey's main colour, naming its country
+  const shown = open !== null && phase !== 'closing' && phase !== 'closed' ? JERSEYS[open] : null
+  const kit = shown?.base ?? null
+  const message = shown ? [shown.country.toUpperCase()] : TICKER
+  const items = Array.from({ length: 16 }, () => message).flat()
   const tickerStyle = kit ? ({ '--ticker-bg': kit, '--ticker-ink': inkOn(kit) } as CSSProperties) : undefined
 
   return (
@@ -29,7 +31,7 @@ export function Chrome() {
       <div className="chrome" data-hidden={phase !== 'closed'}>
         <header className="chrome__top">
           <div className="logo">
-            POC<span>-Jersey</span>
+            showroom<span>-jersey</span>
           </div>
         </header>
 

@@ -17,7 +17,7 @@ export function Loader() {
   return (
     <div className="loader" data-ready={ready} role="status" aria-live="polite" aria-busy={!ready}>
       <div className="loader__logo">
-        POC<span>-Jersey</span>
+        showroom<span>-jersey</span>
       </div>
       <div className="loader__bar">
         <div className="loader__fill" style={{ transform: `scaleX(${progress})` }} />
