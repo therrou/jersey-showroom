@@ -1,5 +1,6 @@
-import type { Quality } from '../state/store'
 import { JERSEYS } from '../data/jerseys'
+import { track } from '../state/loading'
+import type { Quality } from '../state/store'
 import { loadGlbJersey, type GlbJersey } from './glbJersey'
 import { buildProceduralJersey, type JerseyMesh } from './JerseyGeometry'
 import { createJerseyKit, type JerseyKit } from './jerseyTexture'
@@ -48,12 +49,14 @@ function glbAssets(glb: GlbJersey): JerseyAssets {
 let assets: Promise<JerseyAssets> | null = null
 /** Loads once; safe to `use()` from any component under a Suspense boundary. */
 export function jerseyAssets(): Promise<JerseyAssets> {
-  assets ??= forceProcedural
-    ? Promise.resolve(proceduralAssets())
-    : loadGlbJersey().then(glbAssets, (err) => {
-        console.warn('[jersey] GLB failed to load, using the procedural mesh:', err)
-        return proceduralAssets()
-      })
+  assets ??= track(
+    forceProcedural
+      ? Promise.resolve(proceduralAssets())
+      : loadGlbJersey().then(glbAssets, (err) => {
+          console.warn('[jersey] GLB failed to load, using the procedural mesh:', err)
+          return proceduralAssets()
+        }),
+  )
   return assets
 }
 
@@ -61,6 +64,6 @@ const kits = new Map<string, Promise<JerseyKit>>()
 /** Kit maps for jersey `index` at colour-atlas width `width` (cached; safe to call early to warm). */
 export function jerseyKit(index: number, width: number): Promise<JerseyKit> {
   const key = `${index}@${width}`
-  if (!kits.has(key)) kits.set(key, createJerseyKit(JERSEYS[index], width))
+  if (!kits.has(key)) kits.set(key, track(createJerseyKit(JERSEYS[index], width)))
   return kits.get(key)!
 }

@@ -6,6 +6,7 @@ import { Bloom, EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react
 import { ToneMappingMode } from 'postprocessing'
 import * as THREE from 'three'
 import { JERSEYS } from '../data/jerseys'
+import { useLoading } from '../state/loading'
 import { useRack } from '../state/store'
 import { CursorTracker } from './CursorTracker'
 import { RackHover } from './RackHover'
@@ -59,6 +60,16 @@ function CameraRig() {
   return null
 }
 
+/** Mounts with the jerseys: once the rack has drawn a couple of frames with all of them
+ *  (shaders compiled, textures uploaded), the loading screen can go. */
+function ReadySignal() {
+  const frames = useRef(0)
+  useFrame(() => {
+    if (++frames.current === 3) useLoading.getState().setReady()
+  })
+  return null
+}
+
 /** Mounts once everything above it in the Suspense boundary has resolved. */
 function Loaded({ onLoad }: { onLoad: () => void }) {
   useEffect(() => {
@@ -102,6 +113,7 @@ export function RackScene() {
             <HangerRig key={j.code} index={i} homeX={HOME[i]} />
           ))}
           <Loaded onLoad={() => setSettled(true)} />
+          <ReadySignal />
         </Physics>
       </Suspense>
       {quality === 'high' && (

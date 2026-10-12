@@ -180,3 +180,18 @@ body {
   .ticker__track { animation: none; }
   .rack { transition: none; }
 }
+
+/* first-load screen */
+.loader {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background: #15181c;
+  transition: opacity 500ms var(--ease-out);
+}
+.loader[data-ready='true'] { opacity: 0; pointer-events: none; }
+.loader__logo { font-family: var(--serif); font-style: italic; font-size: 34px; line-height: 0.8; letter-spacing: -0.01em; color: var(--ink); }
+.loader__logo span { color: var(--rink); margin-left: 2px; }
+.loader__bar { width: min(220px, 60vw); height: 2px; background: rgba(238, 242, 246, 0.12); border-radius: 2px; overflow: hidden; }
+.loader__fill { height: 100%; background: var(--rink); transform-origin: left; transition: transform 300ms var(--ease-out); }
+.loader__label { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+@media (prefers-reduced-motion: reduce) { .loader, .loader__fill { transition: none; } }

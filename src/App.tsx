@@ -5,6 +5,7 @@ import { Chrome } from './ui/Chrome'
 import { JerseyModal } from './ui/JerseyModal'
 import { TunePanel } from './ui/TunePanel'
 import { FpsOverlay } from './ui/FpsOverlay'
+import { Loader } from './ui/Loader'
 import { useRack } from './state/store'
 
 export function App() {
@@ -37,6 +38,7 @@ export function App() {
       <JerseyModal />
       <TunePanel />
       <FpsOverlay />
+      <Loader />
     </main>
   )
 }
