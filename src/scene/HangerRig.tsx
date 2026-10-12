@@ -32,9 +32,6 @@ const TILT_K = 3
 // After the put-back, the jersey only starts colliding again once its neighbours have slid
 // clear: it lands in its turned-out slot while they're still making room.
 const REJOIN_MS = 1400
-// Side-on jerseys draw the light mesh; the turned-out one swaps to the detailed mesh at
-// once, and back only after it has turned side-on again (so the swap is never seen).
-const LOD_DOWN_MS = 1100
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 const _q = new THREE.Quaternion()
 const _qi = new THREE.Quaternion()
@@ -64,7 +61,6 @@ export function HangerRig({ index, homeX }: Props) {
   const kit = use(jerseyKit(index, quality === 'high' ? 2048 : 1024))
   const assets = use(jerseyAssets())
   const mesh = assets.rack(quality)
-  const farMesh = assets.rackFar(quality)
   const fabric = useRef<THREE.Mesh>(null)
   // small per-jersey irregularity so the rack doesn't look cloned
   const seed = useMemo(() => jerseySeed(index), [index])
@@ -75,7 +71,6 @@ export function HangerRig({ index, homeX }: Props) {
   const uniforms = useMemo(() => {
     const u = createFabricUniforms(seed)
     const rig = sleeveRig(mesh)
-    sleeveRig(farMesh) // (same drape: only its weights are needed)
     u.uPivotR.value.copy(rig.pivotR)
     u.uPivotL.value.copy(rig.pivotL)
     u.uSleeve.value.copy(variety.sleeve)
@@ -83,7 +78,7 @@ export function HangerRig({ index, homeX }: Props) {
     u.uBody.value.copy(variety.body)
     u.uFold.value = variety.fold
     return u
-  }, [seed, mesh, farMesh, variety])
+  }, [seed, mesh, variety])
   const material = useMemo(
     () =>
       createFabricMaterial(kit, {
@@ -107,19 +102,11 @@ export function HangerRig({ index, homeX }: Props) {
   const target = useRef({ x: homeX, yaw: SIDE_YAW + yawJitter, hovered: false })
 
   useEffect(() => {
-    let lodT = 0
-    const lod = (near: boolean) => {
-      window.clearTimeout(lodT)
-      const show = (m: typeof mesh) => fabric.current && (fabric.current.geometry = m.geometry)
-      if (near) show(mesh)
-      else lodT = window.setTimeout(() => show(farMesh), LOD_DOWN_MS)
-    }
     const apply = (hovered: number | null, flipped: boolean) => {
       target.current.x = slotPositions(JERSEYS.length, hovered)[index]
       // turned out: front to the viewer, or its back (carousel flip)
       target.current.yaw = hovered === index ? (flipped ? Math.PI : 0) : SIDE_YAW + yawJitter
       target.current.hovered = hovered === index
-      lod(hovered === index)
     }
     apply(useRack.getState().hovered, useRack.getState().rackFlipped)
     // the jersey lifted into the modal disappears from the rack until it's put back, and
@@ -140,9 +127,8 @@ export function HangerRig({ index, homeX }: Props) {
     return () => {
       off()
       window.clearTimeout(rejoin)
-      window.clearTimeout(lodT)
     }
-  }, [index, yawJitter, mesh, farMesh])
+  }, [index, yawJitter])
 
   useBeforePhysicsStep((world) => {
     const t = trolley.current
@@ -341,7 +327,9 @@ export function HangerRig({ index, homeX }: Props) {
           <mesh
             ref={fabric}
             position={[0, -JERSEY_DROP, 0]}
-            geometry={farMesh.geometry}
+            // one mesh whether side-on or turned out: swapping to a lighter one side-on
+            // changed its shading and shadows mid-turn
+            geometry={mesh.geometry}
             material={material}
             customDepthMaterial={depthMaterial}
             castShadow

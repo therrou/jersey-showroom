@@ -17,8 +17,6 @@ export interface JerseyAssets {
   source: 'glb' | 'procedural'
   /** Static render mesh for the rack. */
   rack(quality: Quality): JerseyMesh
-  /** Lighter rack mesh for jerseys hanging side-on (same UVs, maps and silhouette). */
-  rackFar(quality: Quality): JerseyMesh
   /** Simulated mesh for the modal; `grid` sizes the procedural fallback. */
   cloth(quality: Quality, grid: { cols: number; rows: number }): JerseyMesh
 }
@@ -35,9 +33,6 @@ function proceduralAssets(): JerseyAssets {
       rack ??= buildProceduralJersey({ cols: 60, rows: 44 })
       return rack
     },
-    rackFar() {
-      return this.rack('low')
-    },
     cloth(_q, { cols, rows }) {
       const key = `${cols}x${rows}`
       if (!cloth.has(key)) cloth.set(key, buildProceduralJersey({ cols, rows }))
@@ -50,7 +45,6 @@ function glbAssets(glb: GlbJersey): JerseyAssets {
   return {
     source: 'glb',
     rack: (q) => (q === 'high' ? glb.high : glb.low),
-    rackFar: () => glb.low,
     cloth: (q) => (q === 'high' ? glb.high : glb.low),
   }
 }

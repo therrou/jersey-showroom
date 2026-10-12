@@ -8,7 +8,11 @@ export const WALL_Z = -0.55
 export const FLOOR_Y = -0.62
 export const RINK_BLUE = '#2fb2ff'
 
-const chrome = new THREE.MeshStandardMaterial({ color: '#e8ecf0', roughness: 0.08, metalness: 1 })
+// Brushed rather than mirror chrome: on a near-mirror tube the spotlights' highlights are
+// tiny, blown-out dots that slide along the rail with the camera's parallax; a little
+// roughness spreads them into a soft sheen, and the ceiling strip in the environment gives
+// the rail one steady highlight along its length.
+const chrome = new THREE.MeshStandardMaterial({ color: '#e8ecf0', roughness: 0.2, metalness: 1, envMapIntensity: 1.2 })
 
 /** Dark slatwall: horizontal grooves every 15 cm with a metal insert lip. */
 function useSlatwallTextures() {
@@ -78,6 +82,8 @@ export function Room() {
         <Lightformer intensity={1} position={[-5, 1, 2]} rotation-y={Math.PI / 2} scale={[4, 2, 1]} />
         <Lightformer intensity={1} position={[5, 1, 2]} rotation-y={-Math.PI / 2} scale={[4, 2, 1]} />
         <Lightformer intensity={3} color={RINK_BLUE} position={[0, 1.4, -2]} scale={[8, 0.2, 1]} />
+        {/* a long ceiling strip over the rail: what the chrome reflects along its length */}
+        <Lightformer form="rect" intensity={4} position={[0, 3, 1.2]} rotation-x={Math.PI / 2} scale={[9, 0.35, 1]} />
       </Environment>
 
       <hemisphereLight args={['#dfe8ff', '#121418', 0.16]} />

@@ -6,7 +6,8 @@ import { JERSEY_DROP } from './rackLayout'
 // The bar sits inside the jersey and is only ever seen through the neck opening, where
 // the fabric keeps most light off it: a dim, matte wood instead of the lit, glossy one.
 const innerWood = new THREE.MeshStandardMaterial({ color: '#2e1c12', roughness: 0.7, envMapIntensity: 0.35 })
-const chrome = new THREE.MeshStandardMaterial({ color: '#dfe3e8', roughness: 0.12, metalness: 1 })
+// (brushed, like the rail: a mirror hook throws a blown-out glint that flickers as it swivels)
+const chrome = new THREE.MeshStandardMaterial({ color: '#dfe3e8', roughness: 0.22, metalness: 1, envMapIntensity: 1.2 })
 
 const _q = new THREE.Quaternion()
 const _f = new THREE.Vector3()

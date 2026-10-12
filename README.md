@@ -71,8 +71,8 @@ brew install basis_universal   # once
 tools/kits/encode.sh           # → public/kits/*.ktx2 (~3 min; optional glob: '*_color_r')
 ```
 
-**Rack mesh detail** — side-on jerseys draw the light mesh (~6.7k tris); the turned-out one
-swaps to the detailed one (~24k), and back once it has turned away again.
+**Rack mesh detail** — every rack jersey draws the detailed mesh (~24k tris; ~6.7k on phones),
+side-on or turned out: swapping meshes mid-turn changed the shading.
 
 **Modal transition** — the jersey lifts off the rack: the rack publishes the jersey's screen
 pose, the cloth spawns at exactly those pixels and glides to centre; the rack captures one
