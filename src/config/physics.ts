@@ -68,7 +68,34 @@ export const physics = {
     /** Particle speed cap (m/s): a safety net only. */
     maxSpeed: 8,
   },
+
+  /** The modal cloth on Rapier soft bodies (default; `?solver=xpbd` = the custom solver). */
+  rapierCloth: {
+    /** Rapier substeps per 1/60 s step, and extra PGS iterations per substep (Rapier's
+     *  default 3 doubles the cost). Fewer = stretchier; long-range attachments cap the sag. */
+    substeps: 4,
+    pgsIterations: 1,
+    /** Edge (stretch) spring: natural frequency (Hz, higher = stiffer) and damping ratio.
+     *  1e5 ≈ rigid: a 0.6 m sheet sags ~3% at 8 substeps (120 Hz sagged ~14%). */
+    stretchHz: 1e5,
+    stretchDamping: 1,
+    /** Front↔back springs holding the tube open (set at spawn; 1.5 let a pull poke through). */
+    thicknessHz: 8,
+    /** Dihedral bending spring: lower Hz = floppier fabric. */
+    bendHz: 3,
+    bendDamping: 0.6,
+    /** Particle air damping (1/s, set at spawn) and self-contacts (set at spawn; true is
+     *  far too slow for real time at ~2.5k particles: 100–240 ms a step). */
+    linearDamping: 0.15,
+    selfContacts: false,
+    /** Grab follow time constant (s) at the default grab compliance. */
+    grabTime: 0.04,
+  },
 }
+
+export type ClothSolverKind = 'rapier' | 'xpbd'
+export const CLOTH_SOLVER: ClothSolverKind =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).get('solver') === 'xpbd' ? 'xpbd' : 'rapier'
 
 export type PhysicsConfig = typeof physics
 

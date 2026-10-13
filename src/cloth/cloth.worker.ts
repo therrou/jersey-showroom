@@ -1,13 +1,23 @@
 /// <reference lib="webworker" />
 import { ClothSolver, type ClothConfig, type ClothInit, type ClothInput, type ClothTarget } from './ClothSolver'
+import { RapierClothSolver, initRapier } from './RapierClothSolver'
+import { physics, type ClothSolverKind } from '../config/physics'
 
 export type WorkerIn =
-  | { type: 'init'; init: ClothInit; cfg: ClothConfig; settleSteps: number }
-  | { type: 'step'; input: ClothInput; buffer: Float32Array }
+  | {
+      type: 'init'
+      init: ClothInit
+      cfg: ClothConfig
+      settleSteps: number
+      solver: ClothSolverKind
+      /** The main thread's live config (the worker has its own copy of the module). */
+      rapierCloth: typeof physics.rapierCloth
+    }
+  | { type: 'step'; input: ClothInput; buffer: Float32Array; rapierCloth?: typeof physics.rapierCloth }
 
 /** `frame`: new positions + hanger pose. `idle`: nothing moved (asleep); the buffer comes back unused. */
 export type WorkerOut =
-  | { type: 'frame'; positions: Float32Array; pose: Float32Array }
+  | { type: 'frame'; positions: Float32Array; pose: Float32Array; ms: number }
   | { type: 'idle'; buffer: Float32Array }
 
 // Fixed timestep ("fix your timestep"): the solver always advances in 1/60 s steps,
@@ -16,8 +26,13 @@ export type WorkerOut =
 const FIXED = 1 / 60
 const MAX_STEPS = 2 // per message; any further backlog is dropped (slow motion beats a spiral)
 
-let solver: ClothSolver | null = null
+/** What the worker needs from a solver: ClothSolver (custom XPBD) or RapierClothSolver. */
+type ClothSim = Pick<ClothSolver, 'n' | 'pos' | 'asleep' | 'yaw' | 'settle' | 'step' | 'restAt' | 'hangerPose'>
+
+let solver: ClothSim | null = null
 let acc = 0
+/** Smoothed solver time per step (ms), reported with each frame (?perf logs it). */
+let stepMs = 0
 let prevPos = new Float32Array(0)
 const prevPose = new Float32Array(8)
 const curPose = new Float32Array(8)
@@ -26,10 +41,15 @@ let shownAsleep = false
 let shownBlend = 0
 let restBuf = new Float32Array(0)
 
-self.onmessage = (e: MessageEvent<WorkerIn>) => {
+self.onmessage = async (e: MessageEvent<WorkerIn>) => {
   const msg = e.data
   if (msg.type === 'init') {
-    solver = new ClothSolver(msg.init)
+    Object.assign(physics.rapierCloth, msg.rapierCloth)
+    if (msg.solver === 'rapier') {
+      // the main thread sends no step before the first frame, so nothing arrives meanwhile
+      await initRapier()
+      solver = new RapierClothSolver(msg.init, msg.cfg)
+    } else solver = new ClothSolver(msg.init)
     // optional pre-settle at the spawn pose (the modal starts from the rest drape: 0 steps)
     const still = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 1, on: false }
     solver.settle(msg.settleSteps, { dt: FIXED, cfg: msg.cfg, target: msg.init.start, wind: still, grab: null })
@@ -41,14 +61,16 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
     post(new Float32Array(solver.n * 3), 1, msg.init.start)
     return
   }
-  if (!solver) return
+  if (!solver) return reply({ type: 'idle', buffer: msg.buffer }, msg.buffer)
+  if (msg.rapierCloth) Object.assign(physics.rapierCloth, msg.rapierCloth)
   const s = solver
   acc += Math.min(msg.input.dt, 0.1)
   let steps = 0
   while (acc >= FIXED && steps < MAX_STEPS) {
     prevPos.set(s.pos)
     pose(s, prevPose)
-    s.step({ ...msg.input, dt: FIXED })
+    const t0 = performance.now()
+    if (s.step({ ...msg.input, dt: FIXED })) stepMs += (performance.now() - t0 - stepMs) * 0.1
     acc -= FIXED
     steps++
   }
@@ -64,7 +86,7 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
   post(msg.buffer.length === s.n * 3 ? msg.buffer : new Float32Array(s.n * 3), acc / FIXED, msg.input.target)
 }
 
-function pose(s: ClothSolver, out: Float32Array) {
+function pose(s: ClothSim, out: Float32Array) {
   s.hangerPose(out, 0)
   out[7] = s.yaw // unwrapped, so a put-back can continue from it
 }
@@ -113,7 +135,7 @@ function post(buffer: Float32Array, alpha: number, target: ClothTarget) {
     for (let k = 3; k < 7; k++) out[k] /= l
     out[7] = out[7] * v + target.yaw * w
   }
-  reply({ type: 'frame', positions: buffer, pose: out }, buffer)
+  reply({ type: 'frame', positions: buffer, pose: out, ms: stepMs }, buffer)
 }
 
 function reply(msg: WorkerOut, buffer: Float32Array) {

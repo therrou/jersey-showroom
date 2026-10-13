@@ -198,7 +198,7 @@ function qToMatrix(q: ArrayLike<number>, R: Float32Array) {
 }
 
 /** Min-heap Dijkstra from every pin over the edge graph: geodesic distance + nearest pin. */
-function geodesicFromPins(n: number, edges: Uint32Array, lengths: Float32Array, pins: Uint32Array) {
+export function geodesicFromPins(n: number, edges: Uint32Array, lengths: Float32Array, pins: Uint32Array) {
   const deg = new Uint32Array(n + 1)
   for (let k = 0; k < edges.length; k++) deg[edges[k] + 1]++
   for (let i = 0; i < n; i++) deg[i + 1] += deg[i]

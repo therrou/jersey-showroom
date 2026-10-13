@@ -1,7 +1,7 @@
 import { use, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
-import { m, physics } from '../config/physics'
+import { CLOTH_SOLVER, m, physics } from '../config/physics'
 import { JERSEYS } from '../data/jerseys'
 import { jerseyAssets, jerseyKit } from '../jersey/assets'
 import { mergeSeamNormals } from '../jersey/JerseyGeometry'
@@ -21,6 +21,7 @@ export const modalPointer = {
   vel: new THREE.Vector3(),
 }
 
+const PERF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf')
 export const CLOTH_GRID = { high: { cols: 48, rows: 36, substeps: 10 }, low: { cols: 30, rows: 23, substeps: 8 } }
 export const modalKitWidth = (q: 'high' | 'low') => (q === 'high' ? 4096 : 2048)
 const WIND_RADIUS = 0.24
@@ -91,6 +92,7 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
     spare: null as Float32Array | null,
     grab: null as ClothInput['grab'],
     grabPlane: new THREE.Plane(),
+    perfAt: 0,
   })
 
   // Worker lifecycle: build constraints once, settle at the spawn pose, then stream.
@@ -124,6 +126,8 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
       // no hidden pre-settle: the cloth starts as the rest drape (exactly the rack's copy)
       // and relaxes into its simulated hang while it lifts off
       settleSteps: 0,
+      solver: CLOTH_SOLVER,
+      rapierCloth: physics.rapierCloth,
     } satisfies WorkerIn)
     return () => worker.terminate()
     // `start` is the spawn pose only; later moves go through `target`
@@ -157,6 +161,10 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
       geometry.computeVertexNormals()
       mergeSeamNormals(geometry, source.seamPairs)
       geometry.computeBoundingSphere()
+      if (PERF && performance.now() - s.perfAt > 2000) {
+        s.perfAt = performance.now()
+        console.info(`[cloth] ${CLOTH_SOLVER} ${frame.ms.toFixed(1)} ms/step (budget 16.7)`)
+      }
       const q = frame.pose
       hangerRef.current?.position.set(q[0], q[1], q[2])
       hangerRef.current?.quaternion.set(q[3], q[4], q[5], q[6])
@@ -189,7 +197,10 @@ export function ClothJersey({ index, start, target, fade, interactive, onReady, 
       const buffer = s.spare ?? new Float32Array(source.particles.length)
       s.spare = null
       s.busy = true
-      s.worker.postMessage({ type: 'step', input, buffer } satisfies WorkerIn, [buffer.buffer])
+      s.worker.postMessage(
+        { type: 'step', input, buffer, rapierCloth: physics.rapierCloth } satisfies WorkerIn,
+        [buffer.buffer],
+      )
     }
   })
 

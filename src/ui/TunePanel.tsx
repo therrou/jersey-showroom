@@ -96,6 +96,19 @@ function Controls() {
       },
       { collapsed: true },
     ),
+    // the Rapier soft-body cloth (default solver; ?solver=xpbd uses the "grab & drop" stretch/bend knobs instead)
+    'rapier cloth': folder(
+      {
+        substeps: { value: physics.rapierCloth.substeps, min: 2, max: 20, step: 1, onChange: set('rapierCloth', 'substeps') },
+        pgsIterations: { value: physics.rapierCloth.pgsIterations, min: 0, max: 6, step: 1, label: 'pgs iterations', onChange: set('rapierCloth', 'pgsIterations') },
+        stretchHz: { value: physics.rapierCloth.stretchHz, min: 10, max: 1e5, step: 10, label: 'stretch (Hz)', onChange: set('rapierCloth', 'stretchHz') },
+        stretchDamping: { value: physics.rapierCloth.stretchDamping, min: 0, max: 3, label: 'stretch damping', onChange: set('rapierCloth', 'stretchDamping') },
+        bendHz: { value: physics.rapierCloth.bendHz, min: 0.2, max: 30, step: 0.1, label: 'bend (Hz)', onChange: set('rapierCloth', 'bendHz') },
+        bendDamping: { value: physics.rapierCloth.bendDamping, min: 0, max: 3, label: 'bend damping', onChange: set('rapierCloth', 'bendDamping') },
+        grabTime: { value: physics.rapierCloth.grabTime, min: 0.02, max: 0.3, step: 0.005, label: 'grab follow (s)', onChange: set('rapierCloth', 'grabTime') },
+      },
+      { collapsed: false },
+    ),
   })
   return null
 }
